@@ -1,0 +1,7 @@
+[project]
+name = "bubble-sandbox"
+version = "0.1.0"
+description = "Python script execution with bubblewrap sandboxing"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
