@@ -8,6 +8,30 @@ from bubble_sandbox import models as bs_models
 from bubble_sandbox import sandbox as bs_sandbox
 from bubble_sandbox import settings as bs_settings
 
+ENVIRONMENT_NAME = "test_environment"
+OTHER_ENVIRONMENT_NAME = "other_test_environment"
+WORKDIR_NAME = "test_workdir"
+HOST_VOLUME_PATH = pathlib.Path("/path/to/host/volume")
+SANDBOX_VOLUME_PATH = pathlib.Path("/sandbox/mounted/volume")
+VOLUME_RO = bs_models.VolumeMount(
+    host_path=HOST_VOLUME_PATH,
+    sandbox_path=SANDBOX_VOLUME_PATH,
+    writable=False,
+)
+VOLUME_RW = bs_models.VolumeMount(
+    host_path=HOST_VOLUME_PATH,
+    sandbox_path=SANDBOX_VOLUME_PATH,
+    writable=True,
+)
+
+OTHER_HOST_VOLUME_PATH = pathlib.Path("/path/to/host/other_volume")
+OTHER_SANDBOX_VOLUME_PATH = pathlib.Path("/sandbox/mounted/other_volume")
+OTHER_VOLUME_RO = bs_models.VolumeMount(
+    host_path=OTHER_HOST_VOLUME_PATH,
+    sandbox_path=OTHER_SANDBOX_VOLUME_PATH,
+    writable=False,
+)
+
 
 @pytest.fixture
 def sandbox_settings(tmp_path: pathlib.Path) -> bs_settings.Settings:
@@ -44,10 +68,23 @@ def test_resolve_venv_path_w_missing_env_dir(sandbox_settings):
 
 
 def test_resolve_venv_path_w_missing_venv(sandbox_settings):
-    env_dir = sandbox_settings.environments_path / "no-venv"
-    env_dir.mkdir()
+    environment_path = sandbox_settings.environments_path / "no-venv"
+    environment_path.mkdir()
+
     with pytest.raises(bs_sandbox.EnvironmentNotInitialized):
         bs_sandbox.resolve_venv_path("no-venv", sandbox_settings)
+
+
+def test_resolve_venv_path_w_valid_env(sandbox_settings):
+    environment_path = _create_env(
+        sandbox_settings.environments_path,
+        ENVIRONMENT_NAME,
+    )
+    expected = environment_path / ".venv"
+
+    found = bs_sandbox.resolve_venv_path(ENVIRONMENT_NAME, sandbox_settings)
+
+    assert found == expected
 
 
 def test_validate_uploads_w_invalid_extension(sandbox_settings):
@@ -55,15 +92,6 @@ def test_validate_uploads_w_invalid_extension(sandbox_settings):
 
     with pytest.raises(bs_sandbox.ExtensionNotAllowed):
         bs_sandbox.validate_uploads(files, sandbox_settings)
-
-
-def test_resolve_venv_path_w_valid_env(sandbox_settings):
-    bare_dir = _create_env(sandbox_settings.environments_path, "bare")
-    expected = bare_dir / ".venv"
-
-    found = bs_sandbox.resolve_venv_path("bare", sandbox_settings)
-
-    assert found == expected
 
 
 def test_validate_uploads_w_oversized_upload(sandbox_settings):
@@ -103,6 +131,131 @@ def _extract_multis(cmd):
             binds.setdefault(token, []).append(target)
 
     return binds
+
+
+@pytest.mark.parametrize(
+    "network_kwargs, has_unshare_net",
+    [
+        ({}, True),
+        ({"network": False}, True),
+        ({"network": True}, False),
+    ],
+)
+@pytest.mark.parametrize("w_lib64", [False, True])
+def test_core_sandbox_args(
+    monkeypatch,
+    w_lib64,
+    network_kwargs,
+    has_unshare_net,
+):
+    unbound = pathlib.Path.exists
+
+    def _lib64_exists(self):
+        if str(self) == "/lib64":
+            return w_lib64
+        else:  # pragma: NO COVER
+            return unbound(self)
+
+    monkeypatch.setattr(pathlib.Path, "exists", _lib64_exists)
+
+    found = bs_sandbox.core_sandbox_args(**network_kwargs)
+
+    executable, *rest = found
+
+    assert executable == "bwrap"
+
+    multis = _extract_multis(rest)
+
+    # Check special filesystem binds
+    assert multis["--proc"] == ["/proc"]
+    assert multis["--dev"] == ["/dev"]
+    assert multis["--tmpfs"] == ["/tmp"]
+
+    # Check read-only binds
+    ro_binds = multis["--ro-bind"]
+    assert ("/usr", "/usr") in ro_binds
+    assert ("/lib", "/lib") in ro_binds
+
+    if w_lib64:
+        assert ("/lib64", "/lib64") in ro_binds
+    else:
+        assert ("/lib64", "/lib64") not in ro_binds
+
+    # Check symlinks
+    symlinks = multis["--symlink"]
+    assert ("usr/bin", "/bin") in symlinks
+    assert ("usr/sbin", "/sbin") in symlinks
+
+    # Check flags
+    assert "--unshare-user" in rest
+    assert "--unshare-pid" in rest
+    assert "--new-session" in rest
+    assert "--die-with-parent" in rest
+
+    if has_unshare_net:
+        assert "--unshare-net" in rest
+    else:
+        assert "--unshare-net" not in rest
+
+
+@mock.patch("bubble_sandbox.sandbox.resolve_venv_path")
+def test_venv_sandbox_args(rvp, sandbox_settings):
+    venv_path = sandbox_settings.environments_path / ENVIRONMENT_NAME
+    rvp.return_value = venv_path
+
+    found = bs_sandbox.venv_sandbox_args(ENVIRONMENT_NAME, sandbox_settings)
+
+    multis = _extract_multis(found)
+
+    # Check read-only binds
+    ro_binds = multis["--ro-bind"]
+    assert (str(venv_path), "/sandbox/venv") in ro_binds
+
+    # Check that venv bindir is at head of PATH
+    set_envs = multis["--setenv"]
+    ((name, value),) = set_envs  # only one
+    assert name == "PATH"
+    assert value.startswith("/sandbox/venv/bin")
+
+
+def test_workdir_sandbox_args(tmp_path: pathlib.Path):
+    workdir_path = tmp_path / WORKDIR_NAME
+
+    found = bs_sandbox.workdir_sandbox_args(workdir_path)
+
+    multis = _extract_multis(found)
+
+    # Check read-only binds
+    ro_binds = multis["--bind"]
+    assert (str(workdir_path), "/sandbox/work") in ro_binds
+
+
+@pytest.mark.parametrize(
+    "volumes, expected",
+    [
+        ([], []),
+        (
+            [VOLUME_RO],
+            [
+                "--ro-bind",
+                str(HOST_VOLUME_PATH),
+                str(SANDBOX_VOLUME_PATH),
+            ],
+        ),
+        (
+            [VOLUME_RW],
+            [
+                "--bind",
+                str(HOST_VOLUME_PATH),
+                str(SANDBOX_VOLUME_PATH),
+            ],
+        ),
+    ],
+)
+def test_volumes_sandbox_args(volumes, expected):
+    found = bs_sandbox.volumes_sandbox_args(volumes)
+
+    assert found == expected
 
 
 @pytest.mark.parametrize(

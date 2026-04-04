@@ -1,8 +1,15 @@
+import pathlib
 import re
 
 import pydantic
 
 _SAFE_NAME_RE = re.compile(r"[a-zA-Z0-9_-]+")
+
+
+class VolumeMount(pydantic.BaseModel):
+    host_path: pathlib.Path
+    sandbox_path: pathlib.Path
+    writable: bool
 
 
 class ScriptResult(pydantic.BaseModel):

@@ -58,25 +58,29 @@ class MaxUploadSizeExceded(ValueError):
 
 
 def resolve_venv_path(
-    env_name: str,
+    environment_name: str,
     settings: bs_settings.Settings,
 ) -> pathlib.Path:
     """Return the path to an environment's virtualenv"""
 
-    if "/" in env_name or "\\" in env_name or ".." in env_name:
-        raise InvalidEnvironmenName(env_name)
+    if (
+        "/" in environment_name
+        or "\\" in environment_name
+        or ".." in environment_name
+    ):
+        raise InvalidEnvironmenName(environment_name)
 
-    env_dir = settings.environments_path / env_name
+    environment_path = settings.environments_path / environment_name
 
-    if not env_dir.is_dir():
-        raise EnvironmentNotFound(env_dir)
+    if not environment_path.is_dir():
+        raise EnvironmentNotFound(environment_path)
 
-    venv_python = env_dir / ".venv" / _VENV_PYTHON
+    venv_python = environment_path / ".venv" / _VENV_PYTHON
 
     if not venv_python.exists():
-        raise EnvironmentNotInitialized(env_name, venv_python)
+        raise EnvironmentNotInitialized(environment_name, venv_python)
 
-    return env_dir / ".venv"
+    return environment_path / ".venv"
 
 
 def validate_uploads(
@@ -94,6 +98,103 @@ def validate_uploads(
 
     if total_size > settings.max_upload_size_bytes:
         raise MaxUploadSizeExceded(total_size, settings.max_upload_size_bytes)
+
+
+def core_sandbox_args(network: bool = False) -> list[str]:
+    """Return 'bwrap' and arguments which are always present
+
+    Include a mount for '/lib64' only if that directory is present
+    on the host system.
+
+    Args:
+      'network' (boolean): if True, omit the '--unshare-net' flag
+    """
+    result = [
+        "bwrap",
+        "--ro-bind",
+        "/usr",
+        "/usr",
+        "--ro-bind",
+        "/lib",
+        "/lib",
+    ]
+
+    if pathlib.Path("/lib64").exists():
+        result.extend(["--ro-bind", "/lib64", "/lib64"])
+
+    result.extend(
+        [
+            "--symlink",
+            "usr/bin",
+            "/bin",
+            "--symlink",
+            "usr/sbin",
+            "/sbin",
+            "--proc",
+            "/proc",
+            "--dev",
+            "/dev",
+            "--tmpfs",
+            "/tmp",
+            "--unshare-user",
+            "--unshare-pid",
+            "--new-session",
+            "--die-with-parent",
+        ]
+    )
+
+    if not network:
+        result.append("--unshare-net")
+
+    return result
+
+
+def venv_sandbox_args(
+    env_name: str,
+    settings: bs_settings.Settings,
+) -> list[str]:
+    """Return added 'bwrap' args based on the given sandbox environment"""
+    venv_path = resolve_venv_path(env_name, settings)
+
+    return [
+        "--ro-bind",
+        str(venv_path),
+        "/sandbox/venv",
+        "--setenv",
+        "PATH",
+        "/sandbox/venv/bin:/usr/bin:/bin",
+    ]
+
+
+def workdir_sandbox_args(
+    workdir: pathlib.Path,
+) -> list[str]:
+    """Return added 'bwrap' args based on the given work directory
+
+    Note that the work directory is mounte with read-write permissions.
+    """
+    return [
+        "--bind",
+        str(workdir),
+        "/sandbox/work",
+    ]
+
+
+def volumes_sandbox_args(volumes: list[bs_models.VolumeMount]) -> list[str]:
+    """Return added 'bwrap' args based on the given volumes"""
+    result = []
+
+    for volume in volumes:
+        if volume.writable:
+            result.extend(
+                ["--bind", str(volume.host_path), str(volume.sandbox_path)]
+            )
+        else:
+            result.extend(
+                ["--ro-bind", str(volume.host_path), str(volume.sandbox_path)]
+            )
+
+    return result
 
 
 def _build_bwrap_command(
