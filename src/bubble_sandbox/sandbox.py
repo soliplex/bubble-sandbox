@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import pathlib
 import sys
 import tempfile
@@ -195,6 +196,37 @@ def volumes_sandbox_args(volumes: list[bs_models.VolumeMount]) -> list[str]:
             )
 
     return result
+
+
+@dataclasses.dataclass(kw_only=True)
+class BwrapSandbox:
+    default_environment_name: str
+    settings: bs_settings.Settings
+    volumes: list[bs_models.VolumeMount] = dataclasses.field(
+        default_factory=list,
+    )
+
+    def bwrap_command(
+        self,
+        *,
+        workdir_path: pathlib.Path,
+        command: list[str],
+        environment_name: str = None,
+        extra_volumes: list[bs_models.VolumeMount] = None,
+    ) -> list[str]:
+        if environment_name is None:
+            environment_name = self.default_environment_name
+
+        if extra_volumes is None:
+            extra_volumes = []
+
+        return (
+            core_sandbox_args()
+            + venv_sandbox_args(environment_name, self.settings)
+            + workdir_sandbox_args(workdir_path)
+            + volumes_sandbox_args(self.volumes + extra_volumes)
+            + command
+        )
 
 
 def _build_bwrap_command(

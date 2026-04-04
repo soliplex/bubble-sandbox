@@ -259,6 +259,73 @@ def test_volumes_sandbox_args(volumes, expected):
 
 
 @pytest.mark.parametrize(
+    "xtra_vols_kwargs, exp_xtra_vols",
+    [
+        ({}, []),
+        (
+            {"extra_volumes": [OTHER_VOLUME_RO]},
+            [OTHER_VOLUME_RO],
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "env_kwargs, exp_env_name",
+    [
+        ({}, ENVIRONMENT_NAME),
+        (
+            {"environment_name": OTHER_ENVIRONMENT_NAME},
+            OTHER_ENVIRONMENT_NAME,
+        ),
+    ],
+)
+@mock.patch("bubble_sandbox.sandbox.volumes_sandbox_args")
+@mock.patch("bubble_sandbox.sandbox.workdir_sandbox_args")
+@mock.patch("bubble_sandbox.sandbox.venv_sandbox_args")
+@mock.patch("bubble_sandbox.sandbox.core_sandbox_args")
+def test_bwrapsandboxcommand_bwrap_command(
+    csa,
+    venvsa,
+    wdsa,
+    volsa,
+    tmp_path,
+    sandbox_settings,
+    env_kwargs,
+    exp_env_name,
+    xtra_vols_kwargs,
+    exp_xtra_vols,
+):
+    csa.return_value = ["CORE"]
+    venvsa.return_value = ["VENV"]
+    wdsa.return_value = ["WORKDIR"]
+    volsa.return_value = ["VOLUMES"]
+
+    volumes = [VOLUME_RO]
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment_name=ENVIRONMENT_NAME,
+        settings=sandbox_settings,
+        volumes=volumes,
+    )
+
+    workdir_path = tmp_path / "workdir"
+    command = ["ls", "-laF"]
+    expected = ["CORE", "VENV", "WORKDIR", "VOLUMES"] + command
+
+    found = sandbox.bwrap_command(
+        workdir_path=workdir_path,
+        command=command,
+        **env_kwargs,
+        **xtra_vols_kwargs,
+    )
+
+    assert found == expected
+
+    csa.assert_called_once_with()
+    venvsa.assert_called_once_with(exp_env_name, sandbox_settings)
+    wdsa.assert_called_once_with(workdir_path)
+    volsa.assert_called_once_with(volumes + exp_xtra_vols)
+
+
+@pytest.mark.parametrize(
     "command",
     [
         ["true"],
