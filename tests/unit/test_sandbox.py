@@ -351,10 +351,42 @@ async def test_bwrapsandboxcommand_execute_script_w_success(
 
     found = await sandbox.execute_script(script=script, **kwargs)
 
-    assert isinstance(found, bs_models.ScriptResult)
-    assert found.stdout == "hello\n"
-    assert found.stderr == ""
-    assert found.return_code == 0
+    assert isinstance(found, bs_models.ExecuteResult)
+    assert found.output == "hello\n"
+    assert found.exit_code == 0
+    assert not found.truncated
+
+
+@pytest.mark.asyncio
+@mock.patch("asyncio.create_subprocess_exec")
+async def test_bwrapsandboxcommand_execute_script_w_truncation(
+    cs_exec,
+    tmp_path,
+    sandbox_settings,
+    bare_environment,
+):
+    MUST_TRUNCATE = b"X" * 200_000
+    proc = cs_exec.return_value
+    proc.communicate.return_value = (MUST_TRUNCATE, b"")
+    proc.returncode = 0
+
+    script = f"print('{MUST_TRUNCATE}')"
+
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment_name="bare",
+        settings=sandbox_settings,
+    )
+
+    found = await sandbox.execute_script(script=script, workdir=workdir)
+    exp_output = MUST_TRUNCATE[:100_000].decode("ascii")
+
+    assert isinstance(found, bs_models.ExecuteResult)
+    assert found.output == exp_output
+    assert found.exit_code == 0
+    assert found.truncated
 
 
 @pytest.mark.asyncio
@@ -381,10 +413,9 @@ async def test_bwrapsandboxcommand_execute_script_w_error(
 
     found = await sandbox.execute_script(script=script, workdir=workdir)
 
-    assert isinstance(found, bs_models.ScriptResult)
-    assert found.stdout == ""
-    assert found.stderr == "error"
-    assert found.return_code == 1
+    assert isinstance(found, bs_models.ExecuteResult)
+    assert found.output == "error"
+    assert found.exit_code == 1
 
 
 @pytest.mark.asyncio
@@ -419,10 +450,9 @@ async def test_bwrapsandboxcommand_execute_script_w_timeout(
 
     found = await sandbox.execute_script(script=script, workdir=workdir)
 
-    assert isinstance(found, bs_models.ScriptResult)
-    assert found.return_code == -1
-    assert "timed out" in found.stderr
-    assert found.stdout == ""
+    assert isinstance(found, bs_models.ExecuteResult)
+    assert "timed out" in found.output
+    assert found.exit_code == -1
 
     proc.kill.assert_called_once_with()
     proc.wait.assert_awaited_once_with()

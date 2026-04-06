@@ -16,7 +16,7 @@ _VENV_PYTHON = (
     else pathlib.PureWindowsPath("Scripts", "python.exe")
 )
 
-_MAX_OUTPUT = 100_000
+MAX_OUTPUT_CHARS = 100_000
 
 
 class InvalidEnvironmenName(ValueError):
@@ -246,7 +246,7 @@ class BwrapSandbox:
         script: str,
         environment_name: str = None,
         workdir: pathlib.Path | str = None,
-    ) -> bs_models.ScriptResult:
+    ) -> bs_models.ExecuteResult:
 
         if workdir is None:
             workdir_context = tempfile.TemporaryDirectory(
@@ -284,16 +284,23 @@ class BwrapSandbox:
             except TimeoutError:
                 proc.kill()
                 await proc.wait()
-                return bs_models.ScriptResult(
-                    stdout="",
-                    stderr="Execution timed out",
-                    return_code=-1,
+                return bs_models.ExecuteResult(
+                    output="Execution timed out",
+                    exit_code=-1,
                 )
 
-            return bs_models.ScriptResult(
-                stdout=stdout.decode("utf-8", errors="replace"),
-                stderr=stderr.decode("utf-8", errors="replace"),
-                return_code=proc.returncode or 0,
+            stdout = stdout.decode("utf-8", errors="replace")
+            stderr = stderr.decode("utf-8", errors="replace")
+            output = stdout + stderr
+            truncated = len(output) > MAX_OUTPUT_CHARS
+
+            if truncated:
+                output = output[:MAX_OUTPUT_CHARS]
+
+            return bs_models.ExecuteResult(
+                output=output,
+                exit_code=proc.returncode or 0,
+                truncated=truncated,
             )
 
 
@@ -446,9 +453,9 @@ async def execute_command_in_sandbox(
     err = stderr.decode("utf-8", errors="replace")
     output = raw + err if err else raw
 
-    truncated = len(output) > _MAX_OUTPUT
+    truncated = len(output) > MAX_OUTPUT_CHARS
     if truncated:
-        output = output[:_MAX_OUTPUT]
+        output = output[:MAX_OUTPUT_CHARS]
 
     return bs_models.ExecuteResult(
         output=output,
