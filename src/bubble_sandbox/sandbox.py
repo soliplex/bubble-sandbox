@@ -249,6 +249,7 @@ class BwrapSandbox:
         script: str,
         environment_name: str = None,
         workdir: pathlib.Path | str = None,
+        timeout: float = None,  # seconds
     ) -> bs_models.ExecuteResult:
 
         if workdir is None:
@@ -271,6 +272,7 @@ class BwrapSandbox:
                 ],
                 environment_name=environment_name,
                 workdir=workdir_path,
+                timeout=timeout,
             )
 
     async def execute_command(
@@ -279,7 +281,11 @@ class BwrapSandbox:
         command: list[str],
         environment_name: str = None,
         workdir: pathlib.Path | None = None,
+        timeout: float = None,  # seconds
     ) -> bs_models.ExecuteResult:
+
+        if timeout is None:
+            timeout = self.settings.execution_timeout_seconds
 
         bwrap_command = self.build_bwrap_command(
             command=command,
@@ -296,7 +302,7 @@ class BwrapSandbox:
         try:
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(),
-                timeout=self.settings.execution_timeout_seconds,
+                timeout=timeout,
             )
         except TimeoutError:
             proc.kill()

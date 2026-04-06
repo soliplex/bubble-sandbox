@@ -454,7 +454,7 @@ async def test_bwrapsandboxcommand_execute_script_w_timeout(
 
     wait_for.side_effect = TimeoutError
 
-    sandbox_settings.execution_timeout_seconds = 0.01
+    timeout_seconds = 0.02
 
     script = "import time; time.sleep(100)"
 
@@ -466,7 +466,11 @@ async def test_bwrapsandboxcommand_execute_script_w_timeout(
         settings=sandbox_settings,
     )
 
-    found = await sandbox.execute_script(script=script, workdir=workdir)
+    found = await sandbox.execute_script(
+        script=script,
+        workdir=workdir,
+        timeout=timeout_seconds,
+    )
 
     assert isinstance(found, bs_models.ExecuteResult)
     assert "timed out" in found.output
@@ -476,7 +480,7 @@ async def test_bwrapsandboxcommand_execute_script_w_timeout(
     proc.wait.assert_awaited_once_with()
 
     ((args, kwargs),) = wait_for.call_args_list
-    assert kwargs == {"timeout": 0.01}
+    assert kwargs == {"timeout": 0.02}
 
     # 'wait_for' raises without awaiting calling the 'proc.communicate' coro
     cs_exec.return_value.communicate.assert_not_awaited()
@@ -637,7 +641,7 @@ async def test_bwrapsandboxcommand_execute_command_w_timeout(
 
     wait_for.side_effect = TimeoutError
 
-    sandbox_settings.execution_timeout_seconds = 0.01
+    timeout_seconds = 0.01
 
     script = "import time; time.sleep(100)"
     command = ["python", "-c", script]
@@ -650,7 +654,11 @@ async def test_bwrapsandboxcommand_execute_command_w_timeout(
         settings=sandbox_settings,
     )
 
-    found = await sandbox.execute_command(command=command, workdir=workdir)
+    found = await sandbox.execute_command(
+        command=command,
+        workdir=workdir,
+        timeout=timeout_seconds,
+    )
 
     assert isinstance(found, bs_models.ExecuteResult)
     assert "timed out" in found.output

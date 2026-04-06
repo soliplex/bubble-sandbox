@@ -33,7 +33,7 @@ class Settings(pydantic_settings.BaseSettings):
     workspace_path: pathlib.Path = DEFAULT_WORKSPACE_PATH
     max_upload_size_bytes: int = DEFAULT_MAX_UPLOAD_SIZE_BYTES
     allowed_extensions: list[str] = list(DEFAULT_ALLOWED_EXTENSIONS)
-    execution_timeout_seconds: int = DEFAULT_EXECUTION_TIMEOUT_SECS
+    execution_timeout_seconds: float = DEFAULT_EXECUTION_TIMEOUT_SECS
     session_idle_timeout_seconds: int = DEFAULT_SESSION_IDLE_TIMEOUT_SECS
     max_output_chars: int = DEFAULT_MAX_OUTPUT_CHARS
     max_session_count: int = DEFAULT_MAX_SESSION_COUNT
