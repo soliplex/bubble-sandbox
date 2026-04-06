@@ -209,7 +209,13 @@ def test_venv_sandbox_args(rvp, sandbox_settings):
     assert value.startswith("/sandbox/venv/bin")
 
 
-def test_workdir_sandbox_args(tmp_path: pathlib.Path):
+def test_workdir_sandbox_args_w_None():
+    found = bs_sandbox.workdir_sandbox_args(None)
+
+    assert found == []
+
+
+def test_workdir_sandbox_args_w_path(tmp_path: pathlib.Path):
     workdir_path = tmp_path / WORKDIR_NAME
 
     found = bs_sandbox.workdir_sandbox_args(workdir_path)

@@ -180,17 +180,20 @@ def venv_sandbox_args(
 
 
 def workdir_sandbox_args(
-    workdir: pathlib.Path,
+    workdir: pathlib.Path | None,
 ) -> list[str]:
     """Return added 'bwrap' args based on the given work directory
 
     Note that the work directory is mounte with read-write permissions.
     """
-    return [
-        "--bind",
-        str(workdir),
-        "/sandbox/work",
-    ]
+    if workdir is not None:
+        return [
+            "--bind",
+            str(workdir),
+            "/sandbox/work",
+        ]
+    else:
+        return []
 
 
 def volumes_sandbox_args(volumes: list[bs_models.VolumeMount]) -> list[str]:
@@ -221,7 +224,7 @@ class BwrapSandbox:
     def build_bwrap_command(
         self,
         *,
-        workdir_path: pathlib.Path,
+        workdir_path: pathlib.Path | None,
         command: list[str],
         environment_name: str = None,
         extra_volumes: list[bs_models.VolumeMount] = None,
