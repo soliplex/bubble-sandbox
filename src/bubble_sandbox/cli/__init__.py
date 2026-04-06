@@ -1,4 +1,8 @@
+import asyncio
+import contextlib
 import pathlib
+import shutil
+import tempfile
 import typing
 
 import typer
@@ -15,7 +19,7 @@ the_cli = typer.Typer(
     },
     no_args_is_help=True,
     add_completion=False,
-    pretty_exceptions_show_locals=False,
+    #pretty_exceptions_show_locals=False,
 )
 
 the_console = console.Console()
@@ -25,6 +29,27 @@ settings_path_option: pathlib.Path = typer.Option(
     None,
     "--settings",
     help="Settings file",
+)
+
+
+script_option: str = typer.Option(
+    None,
+    "--script",
+    help="Script as string",
+)
+
+
+script_file_option: pathlib.Path = typer.Option(
+    None,
+    "--script-file",
+    help="Script as filename",
+)
+
+
+environment_name_option: str = typer.Option(
+    None,
+    "--environment",
+    help="Environment name",
 )
 
 
@@ -80,3 +105,61 @@ def list_environments(
             the_console.print(f"- {subpath.name}")
 
     the_console.print()
+
+
+
+@contextlib.contextmanager
+def copied_environment(the_settings, environment_name):
+    root = the_settings.environments_path
+    environment_path = root / environment_name
+
+    with tempfile.TemporaryDirectory(
+        prefix="exec-script",
+        ignore_cleanup_errors=True,
+    ) as environments_str:
+        eps_copy = pathlib.Path(environments_str)
+
+        ep_copy = eps_copy / environment_name
+        shutil.copytree(environment_path, ep_copy)
+
+        yield the_settings.model_copy(
+            update={"environments_path": eps_copy},
+        )
+
+
+@the_cli.command(
+    "exec-script",
+)
+def exec_script(
+    ctx: typer.Context,
+    settings_path: pathlib.Path = settings_path_option,
+    script: str | None = script_option,
+    script_file: pathlib.Path | None = script_file_option,
+    environment_name: str = environment_name_option,
+):
+    """Run a script / script file in a given environment"""
+    the_settings = get_the_settings(settings_path)
+
+    with copied_environment(the_settings, environment_name) as new_settings:
+        the_sandbox = sandbox.BwrapSandbox(
+            default_environment_name=environment_name,
+            settings=new_settings,
+        )
+        if script is not None:
+            str_or_file = f"'{script}'"
+        elif script_file is not None:
+            str_or_file = f"@{script_file}"
+            script = script_file.read_text()
+
+        the_console.line()
+        the_console.rule(f"Running script: {str_or_file}")
+        the_console.line()
+
+        response = asyncio.run(the_sandbox.execute_script(script=script))
+
+        if response.exit_code:
+            print(f"Exited with code: {response.exit_code}")
+
+        print(response.output)
+        if (response.truncated):
+            print("<truncated>")
