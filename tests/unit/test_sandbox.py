@@ -273,7 +273,7 @@ def test_volumes_sandbox_args(volumes, expected):
 @mock.patch("bubble_sandbox.sandbox.workdir_sandbox_args")
 @mock.patch("bubble_sandbox.sandbox.venv_sandbox_args")
 @mock.patch("bubble_sandbox.sandbox.core_sandbox_args")
-def test_bwrapsandboxcommand_bwrap_command(
+def test_bwrapsandboxcommand_build_bwrap_command(
     csa,
     venvsa,
     wdsa,
@@ -301,7 +301,7 @@ def test_bwrapsandboxcommand_bwrap_command(
     command = ["ls", "-laF"]
     expected = ["CORE", "VENV", "WORKDIR", "VOLUMES"] + command
 
-    found = sandbox.bwrap_command(
+    found = sandbox.build_bwrap_command(
         workdir_path=workdir_path,
         command=command,
         **env_kwargs,

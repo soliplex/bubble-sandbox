@@ -218,7 +218,7 @@ class BwrapSandbox:
         default_factory=list,
     )
 
-    def bwrap_command(
+    def build_bwrap_command(
         self,
         *,
         workdir_path: pathlib.Path,
@@ -262,7 +262,7 @@ class BwrapSandbox:
             script_path = workdir_path / "script.py"
             script_path.write_text(script, encoding="utf-8")
 
-            command = self.bwrap_command(
+            command = self.build_bwrap_command(
                 workdir_path=workdir_path,
                 command=[
                     "/sandbox/venv/bin/python",
