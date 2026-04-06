@@ -30,7 +30,8 @@ exclude = [
 [tool.pytest.ini_options]
 pythonpath = "."
 python_files = "test_*.py"
-testpaths = ["tests"]
+# skip 'tests/functional' by default
+testpaths = ["tests/unit"]
 addopts = "--cov=bubble_sandbox --cov=tests --cov-branch --cov-fail-under=100"
 asyncio_mode = "auto"
 filterwarnings = []

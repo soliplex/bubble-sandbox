@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import pathlib
 from unittest import mock
 
@@ -33,26 +34,6 @@ OTHER_VOLUME_RO = bs_models.VolumeMount(
 )
 
 
-@pytest.fixture
-def sandbox_settings(tmp_path: pathlib.Path) -> bs_settings.Settings:
-    environments_path = tmp_path / "environments"
-    environments_path.mkdir()
-
-    return bs_settings.Settings(
-        environments_path=environments_path,
-        execution_timeout_seconds=5,
-    )
-
-
-def _create_env(envs_dir: pathlib.Path, name: str):
-    env_dir = envs_dir / name
-    env_dir.mkdir()
-    venv_python = env_dir / ".venv" / bs_sandbox._VENV_PYTHON
-    venv_python.parent.mkdir(parents=True)
-    venv_python.write_text("fake")
-    return env_dir
-
-
 @pytest.mark.parametrize(
     "name",
     ["../etc", "foo/bar", "foo\\bar", ".."],
@@ -75,14 +56,10 @@ def test_resolve_venv_path_w_missing_venv(sandbox_settings):
         bs_sandbox.resolve_venv_path("no-venv", sandbox_settings)
 
 
-def test_resolve_venv_path_w_valid_env(sandbox_settings):
-    environment_path = _create_env(
-        sandbox_settings.environments_path,
-        ENVIRONMENT_NAME,
-    )
-    expected = environment_path / ".venv"
+def test_resolve_venv_path_w_valid_env(sandbox_settings, bare_environment):
+    expected = bare_environment / ".venv"
 
-    found = bs_sandbox.resolve_venv_path(ENVIRONMENT_NAME, sandbox_settings)
+    found = bs_sandbox.resolve_venv_path("bare", sandbox_settings)
 
     assert found == expected
 
@@ -339,6 +316,137 @@ def test_bwrapsandboxcommand_bwrap_command(
     volsa.assert_called_once_with(volumes + exp_xtra_vols)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("w_workdir", [False, True])
+@mock.patch("tempfile.TemporaryDirectory")
+@mock.patch("asyncio.create_subprocess_exec")
+async def test_bwrapsandboxcommand_execute_script_w_success(
+    cs_exec,
+    tftd,
+    tmp_path,
+    sandbox_settings,
+    bare_environment,
+    w_workdir,
+):
+    proc = cs_exec.return_value
+    proc.communicate.return_value = (b"hello\n", b"")
+    proc.returncode = 0
+
+    script = "print('hello')"
+
+    kwargs = {}
+
+    if w_workdir:
+        workdir = kwargs["workdir"] = tmp_path / "work"
+        workdir.mkdir()
+    else:
+        temp_dir = tmp_path / "temp_dir"
+        temp_dir.mkdir()
+        tftd.return_value = contextlib.nullcontext(temp_dir)
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment_name="bare",
+        settings=sandbox_settings,
+    )
+
+    found = await sandbox.execute_script(
+        script=script,
+        settings=sandbox_settings,
+        **kwargs,
+    )
+
+    assert isinstance(found, bs_models.ScriptResult)
+    assert found.stdout == "hello\n"
+    assert found.stderr == ""
+    assert found.return_code == 0
+
+
+@pytest.mark.asyncio
+@mock.patch("asyncio.create_subprocess_exec")
+async def test_bwrapsandboxcommand_execute_script_w_error(
+    cs_exec,
+    tmp_path,
+    sandbox_settings,
+    bare_environment,
+):
+    proc = cs_exec.return_value
+    proc.communicate.return_value = (b"", b"error")
+    proc.returncode = 1
+
+    script = "bad"
+
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment_name="bare",
+        settings=sandbox_settings,
+    )
+
+    found = await sandbox.execute_script(
+        script=script,
+        settings=sandbox_settings,
+        workdir=workdir,
+    )
+
+    assert isinstance(found, bs_models.ScriptResult)
+    assert found.stdout == ""
+    assert found.stderr == "error"
+    assert found.return_code == 1
+
+
+@pytest.mark.asyncio
+@mock.patch("asyncio.wait_for")
+@mock.patch("asyncio.create_subprocess_exec")
+async def test_bwrapsandboxcommand_execute_script_w_timeout(
+    cs_exec,
+    wait_for,
+    tmp_path,
+    sandbox_settings,
+    bare_environment,
+):
+    proc = cs_exec.return_value
+    # work around mock quirk: 'asyncio.subprocess.Process.kill' is not async
+    proc.kill = mock.Mock(spec_set=())
+    proc.communicate.return_value = (b"times out", b"")
+    proc.returncode = -99
+
+    wait_for.side_effect = TimeoutError
+
+    sandbox_settings.execution_timeout_seconds = 0.01
+
+    script = "import time; time.sleep(100)"
+
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment_name="bare",
+        settings=sandbox_settings,
+    )
+
+    found = await sandbox.execute_script(
+        script=script,
+        settings=sandbox_settings,
+        workdir=workdir,
+    )
+
+    assert isinstance(found, bs_models.ScriptResult)
+    assert found.return_code == -1
+    assert "timed out" in found.stderr
+    assert found.stdout == ""
+
+    proc.kill.assert_called_once_with()
+    proc.wait.assert_awaited_once_with()
+
+    ((args, kwargs),) = wait_for.call_args_list
+    assert kwargs == {"timeout": 0.01}
+
+    # 'wait_for' raises without awaiting calling the 'proc.communicate' coro
+    cs_exec.return_value.communicate.assert_not_awaited()
+    await args[0]  # avoid tracemalloc warning
+
+
 @pytest.mark.parametrize(
     "command",
     [
@@ -442,14 +550,13 @@ def test__build_bwrap_command_w_lib64_excluded_when_missing(monkeypatch):
     assert ("/lib64", "/lib64") not in ro_binds
 
 
-async def test_execute_in_sandbox_w_env_not_found(sandbox_settings):
-    with pytest.raises(bs_sandbox.EnvironmentNotFound):
-        await bs_sandbox.execute_in_sandbox(
-            script="ok",
-            env_name="nope",
-            files={},
-            settings=sandbox_settings,
-        )
+def _create_env(envs_dir: pathlib.Path, name: str):
+    env_dir = envs_dir / name
+    env_dir.mkdir()
+    venv_python = env_dir / ".venv" / bs_sandbox._VENV_PYTHON
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("fake")
+    return env_dir
 
 
 def _mock_process(stdout=b"", stderr=b"", returncode=0):
@@ -458,6 +565,16 @@ def _mock_process(stdout=b"", stderr=b"", returncode=0):
     proc.returncode = returncode
 
     return proc
+
+
+async def test_execute_in_sandbox_w_env_not_found(sandbox_settings):
+    with pytest.raises(bs_sandbox.EnvironmentNotFound):
+        await bs_sandbox.execute_in_sandbox(
+            script="ok",
+            env_name="nope",
+            files={},
+            settings=sandbox_settings,
+        )
 
 
 async def test_execute_in_sandbox_w_success(sandbox_settings):

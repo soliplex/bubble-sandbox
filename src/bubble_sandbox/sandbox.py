@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import dataclasses
 import pathlib
 import sys
@@ -238,6 +239,63 @@ class BwrapSandbox:
             + volumes_sandbox_args(self.volumes + extra_volumes)
             + command
         )
+
+    async def execute_script(
+        self,
+        *,
+        script: str,
+        settings: bs_settings.Settings,
+        environment_name: str = None,
+        workdir: pathlib.Path | str = None,
+    ) -> bs_models.ScriptResult:
+
+        if workdir is None:
+            workdir_context = tempfile.TemporaryDirectory(
+                ignore_cleanup_errors=True,
+            )
+        else:
+            workdir_context = contextlib.nullcontext(workdir)
+
+        with workdir_context as workdir_str:
+            workdir_path = pathlib.Path(workdir_str)
+
+            script_path = workdir_path / "script.py"
+            script_path.write_text(script, encoding="utf-8")
+
+            command = self.bwrap_command(
+                workdir_path=workdir_path,
+                command=[
+                    "/sandbox/venv/bin/python",
+                    "/sandbox/work/script.py",
+                ],
+                environment_name=environment_name,
+            )
+
+            proc = await asyncio.create_subprocess_exec(
+                *command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(),
+                    timeout=settings.execution_timeout_seconds,
+                )
+            except TimeoutError:
+                proc.kill()
+                await proc.wait()
+                return bs_models.ScriptResult(
+                    stdout="",
+                    stderr="Execution timed out",
+                    return_code=-1,
+                )
+
+            return bs_models.ScriptResult(
+                stdout=stdout.decode("utf-8", errors="replace"),
+                stderr=stderr.decode("utf-8", errors="replace"),
+                return_code=proc.returncode or 0,
+            )
 
 
 def _build_bwrap_command(
