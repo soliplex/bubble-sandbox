@@ -59,3 +59,52 @@ async def test_bwrapsandboxcommand_execute_script_w_truncation(
     assert isinstance(found, bs_models.ExecuteResult)
     assert found.output == "X" * 10
     assert found.truncated
+
+
+async def test_bwrapsandboxcommand_execute_command_wo_workdir(
+    sandbox_settings,
+    bare_environment,
+):
+    command = ["ls", "-a", "/sandbox"]
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment_name="bare",
+        settings=sandbox_settings,
+    )
+
+    found = await sandbox.execute_command(command=command)
+
+    assert isinstance(found, bs_models.ExecuteResult)
+    assert found.output.splitlines() == [
+        ".",
+        "..",
+        "venv",
+    ]
+    assert not found.truncated
+
+
+async def test_bwrapsandboxcommand_execute_command_w_workdir(
+    tmp_path,
+    sandbox_settings,
+    bare_environment,
+):
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    command = ["ls", "-a", "/sandbox"]
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment_name="bare",
+        settings=sandbox_settings,
+    )
+
+    found = await sandbox.execute_command(command=command, workdir=workdir)
+
+    assert isinstance(found, bs_models.ExecuteResult)
+    assert found.output.splitlines() == [
+        ".",
+        "..",
+        "venv",
+        "work",
+    ]
+    assert not found.truncated

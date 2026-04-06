@@ -264,47 +264,61 @@ class BwrapSandbox:
             script_path = workdir_path / "script.py"
             script_path.write_text(script, encoding="utf-8")
 
-            command = self.build_bwrap_command(
-                workdir_path=workdir_path,
+            return await self.execute_command(
                 command=[
                     "/sandbox/venv/bin/python",
                     "/sandbox/work/script.py",
                 ],
                 environment_name=environment_name,
+                workdir=workdir_path,
             )
 
-            proc = await asyncio.create_subprocess_exec(
-                *command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+    async def execute_command(
+        self,
+        *,
+        command: list[str],
+        environment_name: str = None,
+        workdir: pathlib.Path | None = None,
+    ) -> bs_models.ExecuteResult:
+
+        bwrap_command = self.build_bwrap_command(
+            command=command,
+            workdir_path=workdir,
+            environment_name=environment_name,
+        )
+
+        proc = await asyncio.create_subprocess_exec(
+            *bwrap_command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=self.settings.execution_timeout_seconds,
             )
-
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(),
-                    timeout=self.settings.execution_timeout_seconds,
-                )
-            except TimeoutError:
-                proc.kill()
-                await proc.wait()
-                return bs_models.ExecuteResult(
-                    output="Execution timed out",
-                    exit_code=-1,
-                )
-
-            stdout = stdout.decode("utf-8", errors="replace")
-            stderr = stderr.decode("utf-8", errors="replace")
-            output = stdout + stderr
-            truncated = len(output) > self.settings.max_output_chars
-
-            if truncated:
-                output = output[: self.settings.max_output_chars]
-
+        except TimeoutError:
+            proc.kill()
+            await proc.wait()
             return bs_models.ExecuteResult(
-                output=output,
-                exit_code=proc.returncode or 0,
-                truncated=truncated,
+                output="Execution timed out",
+                exit_code=-1,
             )
+
+        stdout = stdout.decode("utf-8", errors="replace")
+        stderr = stderr.decode("utf-8", errors="replace")
+        output = stdout + stderr
+        truncated = len(output) > self.settings.max_output_chars
+
+        if truncated:
+            output = output[: self.settings.max_output_chars]
+
+        return bs_models.ExecuteResult(
+            output=output,
+            exit_code=proc.returncode or 0,
+            truncated=truncated,
+        )
 
 
 def _build_bwrap_command(

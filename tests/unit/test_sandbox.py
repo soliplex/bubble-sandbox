@@ -396,6 +396,16 @@ async def test_bwrapsandboxcommand_execute_script_w_truncation(
     assert found.exit_code == 0
     assert found.truncated
 
+    ((args, kwargs),) = cs_exec.call_args_list
+    assert args[-2:] == (
+        "/sandbox/venv/bin/python",
+        "/sandbox/work/script.py",
+    )
+    assert kwargs == {
+        "stdout": asyncio.subprocess.PIPE,
+        "stderr": asyncio.subprocess.PIPE,
+    }
+
 
 @pytest.mark.asyncio
 @mock.patch("asyncio.create_subprocess_exec")
@@ -457,6 +467,190 @@ async def test_bwrapsandboxcommand_execute_script_w_timeout(
     )
 
     found = await sandbox.execute_script(script=script, workdir=workdir)
+
+    assert isinstance(found, bs_models.ExecuteResult)
+    assert "timed out" in found.output
+    assert found.exit_code == -1
+
+    proc.kill.assert_called_once_with()
+    proc.wait.assert_awaited_once_with()
+
+    ((args, kwargs),) = wait_for.call_args_list
+    assert kwargs == {"timeout": 0.01}
+
+    # 'wait_for' raises without awaiting calling the 'proc.communicate' coro
+    cs_exec.return_value.communicate.assert_not_awaited()
+    await args[0]  # avoid tracemalloc warning
+
+
+@pytest.mark.asyncio
+@mock.patch("asyncio.create_subprocess_exec")
+async def test_bwrapsandboxcommand_execute_command_w_success(
+    cs_exec,
+    tmp_path,
+    sandbox_settings,
+    bare_environment,
+):
+    proc = cs_exec.return_value
+    proc.communicate.return_value = (b".  ..\n", b"")
+    proc.returncode = 0
+
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    command = ["ls", "-a", "/sandbox/work"]
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment_name="bare",
+        settings=sandbox_settings,
+    )
+
+    found = await sandbox.execute_command(command=command, workdir=workdir)
+
+    assert isinstance(found, bs_models.ExecuteResult)
+    assert found.output == ".  ..\n"
+    assert found.exit_code == 0
+    assert not found.truncated
+
+    ((args, kwargs),) = cs_exec.call_args_list
+    assert args[-3:] == (
+        "ls",
+        "-a",
+        "/sandbox/work",
+    )
+    assert kwargs == {
+        "stdout": asyncio.subprocess.PIPE,
+        "stderr": asyncio.subprocess.PIPE,
+    }
+
+
+@pytest.mark.asyncio
+@mock.patch("asyncio.create_subprocess_exec")
+async def test_bwrapsandboxcommand_execute_command_wo_workdir(
+    cs_exec,
+    tmp_path,
+    sandbox_settings,
+    bare_environment,
+):
+    proc = cs_exec.return_value
+    proc.communicate.return_value = (b"hello\n", b"")
+    proc.returncode = 0
+
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    command = ["python", "-c", "print('hello')"]
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment_name="bare",
+        settings=sandbox_settings,
+    )
+
+    found = await sandbox.execute_command(command=command)
+
+    assert isinstance(found, bs_models.ExecuteResult)
+    assert found.output == "hello\n"
+    assert found.exit_code == 0
+    assert not found.truncated
+
+
+@pytest.mark.asyncio
+@mock.patch("asyncio.create_subprocess_exec")
+async def test_bwrapsandboxcommand_execute_command_w_truncation(
+    cs_exec,
+    tmp_path,
+    sandbox_settings,
+    bare_environment,
+):
+    MUST_TRUNCATE = b"X" * 100
+
+    sandbox_settings.max_output_chars = 50
+    proc = cs_exec.return_value
+    proc.communicate.return_value = (MUST_TRUNCATE, b"")
+    proc.returncode = 0
+
+    script = f"print('{MUST_TRUNCATE}')"
+    command = ["python", "-c", script]
+
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment_name="bare",
+        settings=sandbox_settings,
+    )
+
+    found = await sandbox.execute_command(command=command, workdir=workdir)
+    exp_output = MUST_TRUNCATE[:50].decode("ascii")
+
+    assert isinstance(found, bs_models.ExecuteResult)
+    assert found.output == exp_output
+    assert found.exit_code == 0
+    assert found.truncated
+
+
+@pytest.mark.asyncio
+@mock.patch("asyncio.create_subprocess_exec")
+async def test_bwrapsandboxcommand_execute_command_w_error(
+    cs_exec,
+    tmp_path,
+    sandbox_settings,
+    bare_environment,
+):
+    proc = cs_exec.return_value
+    proc.communicate.return_value = (b"", b"error")
+    proc.returncode = 1
+
+    script = "import sys; sys.exit(1)"
+    command = ["python", "-c", script]
+
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment_name="bare",
+        settings=sandbox_settings,
+    )
+
+    found = await sandbox.execute_command(command=command, workdir=workdir)
+
+    assert isinstance(found, bs_models.ExecuteResult)
+    assert found.output == "error"
+    assert found.exit_code == 1
+
+
+@pytest.mark.asyncio
+@mock.patch("asyncio.wait_for")
+@mock.patch("asyncio.create_subprocess_exec")
+async def test_bwrapsandboxcommand_execute_command_w_timeout(
+    cs_exec,
+    wait_for,
+    tmp_path,
+    sandbox_settings,
+    bare_environment,
+):
+    proc = cs_exec.return_value
+    # work around mock quirk: 'asyncio.subprocess.Process.kill' is not async
+    proc.kill = mock.Mock(spec_set=())
+    proc.communicate.return_value = (b"times out", b"")
+    proc.returncode = -99
+
+    wait_for.side_effect = TimeoutError
+
+    sandbox_settings.execution_timeout_seconds = 0.01
+
+    script = "import time; time.sleep(100)"
+    command = ["python", "-c", script]
+
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment_name="bare",
+        settings=sandbox_settings,
+    )
+
+    found = await sandbox.execute_command(command=command, workdir=workdir)
 
     assert isinstance(found, bs_models.ExecuteResult)
     assert "timed out" in found.output
