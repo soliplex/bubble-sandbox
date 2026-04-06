@@ -19,6 +19,7 @@ DEFAULT_ALLOWED_EXTENSIONS = (
 )
 DEFAULT_EXECUTION_TIMEOUT_SECS = 30
 DEFAULT_SESSION_IDLE_TIMEOUT_SECS = 3600
+DEFAULT_MAX_OUTPUT_CHARS = 100_000
 DEFAULT_MAX_SESSION_COUNT = 50
 DEFAULT_LOG_LEVEL = logging.getLevelName(logging.INFO)
 
@@ -34,6 +35,7 @@ class Settings(pydantic_settings.BaseSettings):
     allowed_extensions: list[str] = list(DEFAULT_ALLOWED_EXTENSIONS)
     execution_timeout_seconds: int = DEFAULT_EXECUTION_TIMEOUT_SECS
     session_idle_timeout_seconds: int = DEFAULT_SESSION_IDLE_TIMEOUT_SECS
+    max_output_chars: int = DEFAULT_MAX_OUTPUT_CHARS
     max_session_count: int = DEFAULT_MAX_SESSION_COUNT
     allow_persistent_sessions: bool = True
     log_level: str = DEFAULT_LOG_LEVEL

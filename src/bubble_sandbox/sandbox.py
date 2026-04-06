@@ -16,7 +16,7 @@ _VENV_PYTHON = (
     else pathlib.PureWindowsPath("Scripts", "python.exe")
 )
 
-MAX_OUTPUT_CHARS = 100_000
+_MAX_OUTPUT_CHARS = 100_000
 
 
 class InvalidEnvironmenName(ValueError):
@@ -292,10 +292,10 @@ class BwrapSandbox:
             stdout = stdout.decode("utf-8", errors="replace")
             stderr = stderr.decode("utf-8", errors="replace")
             output = stdout + stderr
-            truncated = len(output) > MAX_OUTPUT_CHARS
+            truncated = len(output) > self.settings.max_output_chars
 
             if truncated:
-                output = output[:MAX_OUTPUT_CHARS]
+                output = output[: self.settings.max_output_chars]
 
             return bs_models.ExecuteResult(
                 output=output,
@@ -453,9 +453,9 @@ async def execute_command_in_sandbox(
     err = stderr.decode("utf-8", errors="replace")
     output = raw + err if err else raw
 
-    truncated = len(output) > MAX_OUTPUT_CHARS
+    truncated = len(output) > _MAX_OUTPUT_CHARS
     if truncated:
-        output = output[:MAX_OUTPUT_CHARS]
+        output = output[:_MAX_OUTPUT_CHARS]
 
     return bs_models.ExecuteResult(
         output=output,

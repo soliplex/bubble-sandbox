@@ -365,7 +365,9 @@ async def test_bwrapsandboxcommand_execute_script_w_truncation(
     sandbox_settings,
     bare_environment,
 ):
-    MUST_TRUNCATE = b"X" * 200_000
+    MUST_TRUNCATE = b"X" * 100
+
+    sandbox_settings.max_output_chars = 50
     proc = cs_exec.return_value
     proc.communicate.return_value = (MUST_TRUNCATE, b"")
     proc.returncode = 0
@@ -381,7 +383,7 @@ async def test_bwrapsandboxcommand_execute_script_w_truncation(
     )
 
     found = await sandbox.execute_script(script=script, workdir=workdir)
-    exp_output = MUST_TRUNCATE[:100_000].decode("ascii")
+    exp_output = MUST_TRUNCATE[:50].decode("ascii")
 
     assert isinstance(found, bs_models.ExecuteResult)
     assert found.output == exp_output

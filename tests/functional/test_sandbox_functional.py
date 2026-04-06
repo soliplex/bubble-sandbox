@@ -3,7 +3,6 @@ from bubble_sandbox import sandbox as bs_sandbox
 
 
 async def test_bwrapsandboxcommand_execute_script_wo_workdir(
-    tmp_path,
     sandbox_settings,
     bare_environment,
 ):
@@ -18,6 +17,7 @@ async def test_bwrapsandboxcommand_execute_script_wo_workdir(
 
     assert isinstance(found, bs_models.ExecuteResult)
     assert found.output.startswith("/sandbox/work")
+    assert not found.truncated
 
 
 async def test_bwrapsandboxcommand_execute_script_w_workdir(
@@ -39,3 +39,23 @@ async def test_bwrapsandboxcommand_execute_script_w_workdir(
 
     assert isinstance(found, bs_models.ExecuteResult)
     assert found.output.startswith("/sandbox/work")
+    assert not found.truncated
+
+
+async def test_bwrapsandboxcommand_execute_script_w_truncation(
+    sandbox_settings,
+    bare_environment,
+):
+    sandbox_settings.max_output_chars = 10
+    script = "print('X' * 50)"
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment_name="bare",
+        settings=sandbox_settings,
+    )
+
+    found = await sandbox.execute_script(script=script)
+
+    assert isinstance(found, bs_models.ExecuteResult)
+    assert found.output == "X" * 10
+    assert found.truncated
