@@ -14,10 +14,7 @@ async def test_bwrapsandboxcommand_execute_script_wo_workdir(
         settings=sandbox_settings,
     )
 
-    found = await sandbox.execute_script(
-        script=script,
-        settings=sandbox_settings,
-    )
+    found = await sandbox.execute_script(script=script)
 
     assert isinstance(found, bs_models.ScriptResult)
     assert found.stdout.startswith("/sandbox/work")
@@ -38,11 +35,7 @@ async def test_bwrapsandboxcommand_execute_script_w_workdir(
         settings=sandbox_settings,
     )
 
-    found = await sandbox.execute_script(
-        script=script,
-        settings=sandbox_settings,
-        workdir=workdir,
-    )
+    found = await sandbox.execute_script(script=script, workdir=workdir)
 
     assert isinstance(found, bs_models.ScriptResult)
     assert found.stdout.startswith("/sandbox/work")

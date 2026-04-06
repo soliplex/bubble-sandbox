@@ -349,11 +349,7 @@ async def test_bwrapsandboxcommand_execute_script_w_success(
         settings=sandbox_settings,
     )
 
-    found = await sandbox.execute_script(
-        script=script,
-        settings=sandbox_settings,
-        **kwargs,
-    )
+    found = await sandbox.execute_script(script=script, **kwargs)
 
     assert isinstance(found, bs_models.ScriptResult)
     assert found.stdout == "hello\n"
@@ -383,11 +379,7 @@ async def test_bwrapsandboxcommand_execute_script_w_error(
         settings=sandbox_settings,
     )
 
-    found = await sandbox.execute_script(
-        script=script,
-        settings=sandbox_settings,
-        workdir=workdir,
-    )
+    found = await sandbox.execute_script(script=script, workdir=workdir)
 
     assert isinstance(found, bs_models.ScriptResult)
     assert found.stdout == ""
@@ -425,11 +417,7 @@ async def test_bwrapsandboxcommand_execute_script_w_timeout(
         settings=sandbox_settings,
     )
 
-    found = await sandbox.execute_script(
-        script=script,
-        settings=sandbox_settings,
-        workdir=workdir,
-    )
+    found = await sandbox.execute_script(script=script, workdir=workdir)
 
     assert isinstance(found, bs_models.ScriptResult)
     assert found.return_code == -1

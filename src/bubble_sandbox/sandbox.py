@@ -244,7 +244,6 @@ class BwrapSandbox:
         self,
         *,
         script: str,
-        settings: bs_settings.Settings,
         environment_name: str = None,
         workdir: pathlib.Path | str = None,
     ) -> bs_models.ScriptResult:
@@ -280,7 +279,7 @@ class BwrapSandbox:
             try:
                 stdout, stderr = await asyncio.wait_for(
                     proc.communicate(),
-                    timeout=settings.execution_timeout_seconds,
+                    timeout=self.settings.execution_timeout_seconds,
                 )
             except TimeoutError:
                 proc.kill()
