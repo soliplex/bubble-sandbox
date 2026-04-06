@@ -265,7 +265,7 @@ class BwrapSandbox:
             script_path = workdir_path / "script.py"
             script_path.write_text(script, encoding="utf-8")
 
-            return await self.execute_command(
+            return await self.execute(
                 command=[
                     "/sandbox/venv/bin/python",
                     "/sandbox/work/script.py",
@@ -275,7 +275,7 @@ class BwrapSandbox:
                 timeout=timeout,
             )
 
-    async def execute_command(
+    async def execute(
         self,
         *,
         command: list[str],

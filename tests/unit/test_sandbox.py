@@ -489,7 +489,7 @@ async def test_bwrapsandboxcommand_execute_script_w_timeout(
 
 @pytest.mark.asyncio
 @mock.patch("asyncio.create_subprocess_exec")
-async def test_bwrapsandboxcommand_execute_command_w_success(
+async def test_bwrapsandboxcommand_execute_w_success(
     cs_exec,
     tmp_path,
     sandbox_settings,
@@ -509,7 +509,7 @@ async def test_bwrapsandboxcommand_execute_command_w_success(
         settings=sandbox_settings,
     )
 
-    found = await sandbox.execute_command(command=command, workdir=workdir)
+    found = await sandbox.execute(command=command, workdir=workdir)
 
     assert isinstance(found, bs_models.ExecuteResult)
     assert found.output == ".  ..\n"
@@ -530,7 +530,7 @@ async def test_bwrapsandboxcommand_execute_command_w_success(
 
 @pytest.mark.asyncio
 @mock.patch("asyncio.create_subprocess_exec")
-async def test_bwrapsandboxcommand_execute_command_wo_workdir(
+async def test_bwrapsandboxcommand_execute_wo_workdir(
     cs_exec,
     tmp_path,
     sandbox_settings,
@@ -550,7 +550,7 @@ async def test_bwrapsandboxcommand_execute_command_wo_workdir(
         settings=sandbox_settings,
     )
 
-    found = await sandbox.execute_command(command=command)
+    found = await sandbox.execute(command=command)
 
     assert isinstance(found, bs_models.ExecuteResult)
     assert found.output == "hello\n"
@@ -560,7 +560,7 @@ async def test_bwrapsandboxcommand_execute_command_wo_workdir(
 
 @pytest.mark.asyncio
 @mock.patch("asyncio.create_subprocess_exec")
-async def test_bwrapsandboxcommand_execute_command_w_truncation(
+async def test_bwrapsandboxcommand_execute_w_truncation(
     cs_exec,
     tmp_path,
     sandbox_settings,
@@ -584,7 +584,7 @@ async def test_bwrapsandboxcommand_execute_command_w_truncation(
         settings=sandbox_settings,
     )
 
-    found = await sandbox.execute_command(command=command, workdir=workdir)
+    found = await sandbox.execute(command=command, workdir=workdir)
     exp_output = MUST_TRUNCATE[:50].decode("ascii")
 
     assert isinstance(found, bs_models.ExecuteResult)
@@ -595,7 +595,7 @@ async def test_bwrapsandboxcommand_execute_command_w_truncation(
 
 @pytest.mark.asyncio
 @mock.patch("asyncio.create_subprocess_exec")
-async def test_bwrapsandboxcommand_execute_command_w_error(
+async def test_bwrapsandboxcommand_execute_w_error(
     cs_exec,
     tmp_path,
     sandbox_settings,
@@ -616,7 +616,7 @@ async def test_bwrapsandboxcommand_execute_command_w_error(
         settings=sandbox_settings,
     )
 
-    found = await sandbox.execute_command(command=command, workdir=workdir)
+    found = await sandbox.execute(command=command, workdir=workdir)
 
     assert isinstance(found, bs_models.ExecuteResult)
     assert found.output == "error"
@@ -626,7 +626,7 @@ async def test_bwrapsandboxcommand_execute_command_w_error(
 @pytest.mark.asyncio
 @mock.patch("asyncio.wait_for")
 @mock.patch("asyncio.create_subprocess_exec")
-async def test_bwrapsandboxcommand_execute_command_w_timeout(
+async def test_bwrapsandboxcommand_execute_w_timeout(
     cs_exec,
     wait_for,
     tmp_path,
@@ -654,7 +654,7 @@ async def test_bwrapsandboxcommand_execute_command_w_timeout(
         settings=sandbox_settings,
     )
 
-    found = await sandbox.execute_command(
+    found = await sandbox.execute(
         command=command,
         workdir=workdir,
         timeout=timeout_seconds,

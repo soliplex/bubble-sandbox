@@ -72,7 +72,7 @@ async def test_bwrapsandboxcommand_execute_command_wo_workdir(
         settings=sandbox_settings,
     )
 
-    found = await sandbox.execute_command(command=command)
+    found = await sandbox.execute(command=command)
 
     assert isinstance(found, bs_models.ExecuteResult)
     assert found.output.splitlines() == [
@@ -98,7 +98,7 @@ async def test_bwrapsandboxcommand_execute_command_w_workdir(
         settings=sandbox_settings,
     )
 
-    found = await sandbox.execute_command(command=command, workdir=workdir)
+    found = await sandbox.execute(command=command, workdir=workdir)
 
     assert isinstance(found, bs_models.ExecuteResult)
     assert found.output.splitlines() == [
