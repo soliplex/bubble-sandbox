@@ -7,6 +7,8 @@ import tempfile
 from bubble_sandbox import models as bs_models
 from bubble_sandbox import settings as bs_settings
 
+_SYS_BASE_PREFIX = sys.base_prefix
+
 _VENV_PYTHON = (
     pathlib.PurePosixPath("bin", "python")
     if sys.platform != "win32"
@@ -122,6 +124,15 @@ def core_sandbox_args(network: bool = False) -> list[str]:
 
     if pathlib.Path("/lib64").exists():
         result.extend(["--ro-bind", "/lib64", "/lib64"])
+
+    if _SYS_BASE_PREFIX != "/usr":
+        result.extend(
+            [
+                "--ro-bind",
+                _SYS_BASE_PREFIX,
+                _SYS_BASE_PREFIX,
+            ]
+        )
 
     result.extend(
         [

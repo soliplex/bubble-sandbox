@@ -134,6 +134,14 @@ def _extract_multis(cmd):
 
 
 @pytest.mark.parametrize(
+    "w_sys_base_prefix, exp_ro_bind",
+    [
+        ("/usr", None),
+        ("/opt/Python-x.y.z", ("/opt/Python-x.y.z", "/opt/Python-x.y.z")),
+        ("/usr/local", ("/usr/local", "/usr/local")),
+    ],
+)
+@pytest.mark.parametrize(
     "network_kwargs, has_unshare_net",
     [
         ({}, True),
@@ -147,6 +155,8 @@ def test_core_sandbox_args(
     w_lib64,
     network_kwargs,
     has_unshare_net,
+    w_sys_base_prefix,
+    exp_ro_bind,
 ):
     unbound = pathlib.Path.exists
 
@@ -157,6 +167,7 @@ def test_core_sandbox_args(
             return unbound(self)
 
     monkeypatch.setattr(pathlib.Path, "exists", _lib64_exists)
+    monkeypatch.setattr(bs_sandbox, "_SYS_BASE_PREFIX", w_sys_base_prefix)
 
     found = bs_sandbox.core_sandbox_args(**network_kwargs)
 
@@ -180,6 +191,9 @@ def test_core_sandbox_args(
         assert ("/lib64", "/lib64") in ro_binds
     else:
         assert ("/lib64", "/lib64") not in ro_binds
+
+    if exp_ro_bind is not None:
+        assert exp_ro_bind in ro_binds
 
     # Check symlinks
     symlinks = multis["--symlink"]
