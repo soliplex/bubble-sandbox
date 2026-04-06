@@ -171,7 +171,7 @@ def venv_sandbox_args(
 
     return [
         "--ro-bind",
-        str(venv_path),
+        str(venv_path.resolve()),
         "/sandbox/venv",
         "--setenv",
         "PATH",
