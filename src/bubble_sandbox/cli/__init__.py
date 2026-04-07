@@ -44,6 +44,12 @@ environment_name_option: str = typer.Option(
     "--environment",
     help="Environment name",
 )
+workdir_option: pathlib.Path = typer.Option(
+    None,
+    "-w",
+    "--workdir",
+    help="Directory in which to run the script (mounted read-write)",
+)
 
 
 def version_callback(value: bool):
@@ -107,6 +113,7 @@ def exec_script(
     script: str | None = script_option,
     script_file: pathlib.Path | None = script_file_option,
     environment_name: str = environment_name_option,
+    workdir: pathlib.Path | None = workdir_option,
 ):
     """Run a script / script file in a given environment"""
     the_config = get_the_config(config_file)
@@ -125,7 +132,19 @@ def exec_script(
     the_console.rule(f"Running script: {str_or_file}")
     the_console.line()
 
-    response = asyncio.run(the_sandbox.execute_script(script=script))
+    if workdir is not None:
+        response = asyncio.run(
+            the_sandbox.execute_script(
+                script=script,
+                workdir=workdir,
+            )
+        )
+    else:
+        response = asyncio.run(
+            the_sandbox.execute_script(
+                script=script,
+            )
+        )
 
     if response.exit_code:
         print(f"Exited with code: {response.exit_code}")
