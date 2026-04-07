@@ -1,17 +1,13 @@
 import asyncio
-import contextlib
+import importlib.metadata
 import pathlib
-import shutil
-import tempfile
-import typing
 
+import rich.console
 import typer
 import yaml
-from rich import console
 
 from bubble_sandbox import config as bs_config
 from bubble_sandbox import sandbox as bs_sandbox
-
 
 the_cli = typer.Typer(
     context_settings={
@@ -19,11 +15,10 @@ the_cli = typer.Typer(
     },
     no_args_is_help=True,
     add_completion=False,
-    #pretty_exceptions_show_locals=False,
+    # pretty_exceptions_show_locals=False,
 )
 
-the_console = console.Console()
-
+the_console = rich.console.Console()
 
 config_file_option: pathlib.Path = typer.Option(
     None,
@@ -31,24 +26,18 @@ config_file_option: pathlib.Path = typer.Option(
     "--config",
     help="Config file",
 )
-
-
 script_option: str = typer.Option(
     None,
     "-s",
     "--script",
     help="Script as string",
 )
-
-
 script_file_option: pathlib.Path = typer.Option(
     None,
     "-f",
     "--script-file",
     help="Script as filename",
 )
-
-
 environment_name_option: str = typer.Option(
     None,
     "-e",
@@ -59,9 +48,9 @@ environment_name_option: str = typer.Option(
 
 def version_callback(value: bool):
     if value:
-        gitmeta = util.GitMetadata(pathlib.Path.cwd())
-        v = importlib_metadata.version("bubble_sandbox")
+        v = importlib.metadata.version("bubble_sandbox")
         the_console.print(f"Installed bubble_sandbox version: {v}")
+        raise typer.Exit()
 
 
 @the_cli.callback()
@@ -79,7 +68,6 @@ def app(
 
 def get_the_config(config_file: pathlib.Path | None) -> bs_config.Config:
     if config_file is not None:
-
         with open(config_file) as f:
             config_dict = yaml.safe_load(f)
 
@@ -143,5 +131,6 @@ def exec_script(
         print(f"Exited with code: {response.exit_code}")
 
     print(response.output)
-    if (response.truncated):
+
+    if response.truncated:
         print("<truncated>")
