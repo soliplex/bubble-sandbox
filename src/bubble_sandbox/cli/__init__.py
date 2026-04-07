@@ -135,6 +135,20 @@ def list_environments(
     the_console.print()
 
 
+def make_sandbox(
+    config_file: pathlib.Path | None,
+    environment_name: str | None,
+    volumes: list[str],
+):
+    the_config = get_the_config(config_file)
+
+    return bs_sandbox.BwrapSandbox(
+        default_environment_name=environment_name,
+        config=the_config,
+        volumes=extract_volume_map(volumes),
+    )
+
+
 @the_cli.command(
     "exec-script",
 )
@@ -148,13 +162,12 @@ def exec_script(
     volumes: list[str] = volume_option,
 ):
     """Run a script / script file in a given environment"""
-    the_config = get_the_config(config_file)
-
-    the_sandbox = bs_sandbox.BwrapSandbox(
-        default_environment_name=environment_name,
-        config=the_config,
-        volumes=extract_volume_map(volumes),
+    the_sandbox = make_sandbox(
+        config_file=config_file,
+        environment_name=environment_name,
+        volumes=volumes,
     )
+
     if script is not None:
         str_or_file = f"'{script}'"
     elif script_file is not None:
@@ -200,12 +213,10 @@ def execute(
     volumes: list[str] = volume_option,
 ):
     """Run a command line in a given environment"""
-    the_config = get_the_config(config_file)
-
-    the_sandbox = bs_sandbox.BwrapSandbox(
-        default_environment_name=environment_name,
-        config=the_config,
-        volumes=extract_volume_map(volumes),
+    the_sandbox = make_sandbox(
+        config_file=config_file,
+        environment_name=environment_name,
+        volumes=volumes,
     )
 
     the_console.line()
@@ -247,12 +258,10 @@ def exec_command(
     volumes: list[str] = volume_option,
 ):
     """Run a shell command in a given environment"""
-    the_config = get_the_config(config_file)
-
-    the_sandbox = bs_sandbox.BwrapSandbox(
-        default_environment_name=environment_name,
-        config=the_config,
-        volumes=extract_volume_map(volumes),
+    the_sandbox = make_sandbox(
+        config_file=config_file,
+        environment_name=environment_name,
+        volumes=volumes,
     )
 
     the_console.line()
