@@ -1,27 +1,11 @@
 import functools
-import logging
 import pathlib
 
 import pydantic_settings
 
 DEFAULT_ENVIRONMENTS_PATH = pathlib.Path("environments")
-DEFAULT_WORKSPACE_PATH = pathlib.Path("workspace_data")
-DEFAULT_MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024  # 10MB
-DEFAULT_ALLOWED_EXTENSIONS = (
-    ".csv",
-    ".json",
-    ".md",
-    ".tsv",
-    ".txt",
-    ".xml",
-    ".yaml",
-    ".yml",
-)
 DEFAULT_EXECUTION_TIMEOUT_SECS = 30
-DEFAULT_SESSION_IDLE_TIMEOUT_SECS = 3600
 DEFAULT_MAX_OUTPUT_CHARS = 100_000
-DEFAULT_MAX_SESSION_COUNT = 50
-DEFAULT_LOG_LEVEL = logging.getLevelName(logging.INFO)
 
 
 class Config(pydantic_settings.BaseSettings):
@@ -30,15 +14,8 @@ class Config(pydantic_settings.BaseSettings):
     )
 
     environments_path: pathlib.Path = DEFAULT_ENVIRONMENTS_PATH
-    workspace_path: pathlib.Path = DEFAULT_WORKSPACE_PATH
-    max_upload_size_bytes: int = DEFAULT_MAX_UPLOAD_SIZE_BYTES
-    allowed_extensions: list[str] = list(DEFAULT_ALLOWED_EXTENSIONS)
     execution_timeout_seconds: float = DEFAULT_EXECUTION_TIMEOUT_SECS
-    session_idle_timeout_seconds: int = DEFAULT_SESSION_IDLE_TIMEOUT_SECS
     max_output_chars: int = DEFAULT_MAX_OUTPUT_CHARS
-    max_session_count: int = DEFAULT_MAX_SESSION_COUNT
-    allow_persistent_sessions: bool = True
-    log_level: str = DEFAULT_LOG_LEVEL
 
 
 @functools.lru_cache
