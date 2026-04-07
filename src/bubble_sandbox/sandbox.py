@@ -191,6 +191,8 @@ def workdir_sandbox_args(
             "--bind",
             str(workdir),
             "/sandbox/work",
+            "--chdir",
+            "/sandbox/work",
         ]
     else:
         return []

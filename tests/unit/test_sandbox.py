@@ -103,7 +103,7 @@ def _extract_multis(cmd):
             source, target = cmd[i_token + 1], cmd[i_token + 2]
             binds.setdefault(token, []).append((source, target))
 
-        elif token in ["--proc", "--dev", "--tmpfs"]:
+        elif token in ["--proc", "--dev", "--tmpfs", "--chdir"]:
             target = cmd[i_token + 1]
             binds.setdefault(token, []).append(target)
 
@@ -222,9 +222,12 @@ def test_workdir_sandbox_args_w_path(tmp_path: pathlib.Path):
 
     multis = _extract_multis(found)
 
-    # Check read-only binds
-    ro_binds = multis["--bind"]
-    assert (str(workdir_path), "/sandbox/work") in ro_binds
+    # Check read-write binds
+    rw_binds = multis["--bind"]
+    assert (str(workdir_path), "/sandbox/work") in rw_binds
+
+    chdir = multis["--chdir"]
+    assert chdir == ["/sandbox/work"]
 
 
 @pytest.mark.parametrize(
