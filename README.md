@@ -46,48 +46,83 @@ uv run bubble-sandbox exec-script \
 List available execution environments and their dependencies.
 
 ```bash
-uv run bubble-sandbox list-environments | jq
-```
-```json
-{
-  "environments": [
-    {"name": "bare", "dependencies": []},
-    {"name": "pandas-exec", "dependencies": ["pandas>=3.0.1"]}
-  ]
-}
+uv run bubble-sandbox list-environments
+
+──────────────────────────── Available environments ────────────────────────────
+
+- bare
+- pandas-only
+
 ```
 
 ### `bubble-sandbox exec-script`
 
 Execute a Python script in a sandboxed environment.
 
-Inline script with no files:
+Inline script:
 
 ```bash
 uv run bubble-sandbox exec-script \
   --environment="bare" \
-  --script="import sys; print(sys.version)" | jq
-```
-```json
-{
-  "stdout": "3.13.12",
-  "stderr": "",
-  "return_code": 0
-}
+  --script="import sys; print(sys.version_info)"
+
+──────────── Running script: 'import sys; print(sys.version_info)' ─────────────
+
+sys.version_info(major=3, minor=13, micro=12, releaselevel='final', serial=0)
+
 ```
 
-Script stored in a file (no extra files):
+Script stored in a file (same script as above):
 
 ```bash
 uv run bubble-sandbox exec-script \
   --environment="bare" \
-  --script-file=/path/to/my_script.py | jq
+  --script-file=/tmp/foo.py
+
+───────────────────────── Running script: @/tmp/foo.py ─────────────────────────
+
+sys.version_info(major=3, minor=13, micro=12, releaselevel='final', serial=0)
 ```
-```json
-{
-  ...
-}
+
+### `bubble-sandbox exec-command`
+
+Execute a shell command in a sandboxed environment.
+
+```bash
+uv run bubble-sandbox exec-command \
+  --environment="bare" \
+  --workdir "/tmp/test" \
+  "pwd && ls -l"
+
+───────────────────── Running shell command: pwd && ls -l ──────────────────────
+
+/sandbox/work
+total 8
+-rw-rw-r-- 1 1000 1000  4 Apr  7 16:38 baz.txt
+-rw-rw-r-- 1 1000 1000 58 Apr  7 16:38 script.py
+
 ```
+
+### `bubble-sandbox exec-command`
+
+Execute a command line (no shell wrapper) in a sandboxed environment.
+
+```bash
+$ uv run bubble-sandbox execute -w /tmp/bar/ -e bare -- ls -laF
+
+─────────────────────────── Running command: ls -laF ───────────────────────────
+
+total 12
+drwxrwxr-x 2 1000 1000 4096 Apr  7 16:38 ./
+drwx------ 4 1000 1000   80 Apr  7 18:11 ../
+-rw-rw-r-- 1 1000 1000    4 Apr  7 16:38 baz.txt
+-rw-rw-r-- 1 1000 1000   58 Apr  7 16:38 script.py
+
+```
+
+**Note:** the `--` above prevents the CLI from interpreting the `-laf` as
+one of its own arguments.
+
 
 ## Configuration
 

@@ -1,6 +1,7 @@
 import asyncio
 import importlib.metadata
 import pathlib
+import typing
 
 import rich.console
 import typer
@@ -50,6 +51,12 @@ workdir_option: pathlib.Path = typer.Option(
     "--workdir",
     help="Directory in which to run the script (mounted read-write)",
 )
+exec_command_args = typing.Annotated[
+    list[str],
+    typer.Argument(
+        help="Arguments to 'exec-command'",
+    ),
+]
 
 
 def version_callback(value: bool):
@@ -143,6 +150,98 @@ def exec_script(
         response = asyncio.run(
             the_sandbox.execute_script(
                 script=script,
+            )
+        )
+
+    if response.exit_code:
+        print(f"Exited with code: {response.exit_code}")
+
+    print(response.output)
+
+    if response.truncated:
+        print("<truncated>")
+
+
+@the_cli.command(
+    "execute",
+)
+def execute(
+    ctx: typer.Context,
+    command: list[str],
+    config_file: pathlib.Path = config_file_option,
+    environment_name: str = environment_name_option,
+    workdir: pathlib.Path | None = workdir_option,
+):
+    """Run a command line in a given environment"""
+    the_config = get_the_config(config_file)
+
+    the_sandbox = bs_sandbox.BwrapSandbox(
+        default_environment_name=environment_name,
+        config=the_config,
+    )
+
+    the_console.line()
+    the_console.rule(f"Running command: {' '.join(command)}")
+    the_console.line()
+
+    if workdir is not None:
+        response = asyncio.run(
+            the_sandbox.execute(
+                command=command,
+                workdir=workdir,
+            )
+        )
+    else:
+        response = asyncio.run(
+            the_sandbox.execute(
+                command=command,
+            )
+        )
+
+    if response.exit_code:
+        print(f"Exited with code: {response.exit_code}")
+
+    print(response.output)
+
+    if response.truncated:
+        print("<truncated>")
+
+
+@the_cli.command(
+    "exec-command",
+)
+def exec_command(
+    ctx: typer.Context,
+    command: str,
+    config_file: pathlib.Path = config_file_option,
+    environment_name: str = environment_name_option,
+    workdir: pathlib.Path | None = workdir_option,
+):
+    """Run a shell command in a given environment"""
+    the_config = get_the_config(config_file)
+
+    the_sandbox = bs_sandbox.BwrapSandbox(
+        default_environment_name=environment_name,
+        config=the_config,
+    )
+
+    the_console.line()
+    the_console.rule(f"Running shell command: {command}")
+    the_console.line()
+
+    command = ["sh", "-c", command]
+
+    if workdir is not None:
+        response = asyncio.run(
+            the_sandbox.execute(
+                command=command,
+                workdir=workdir,
+            )
+        )
+    else:
+        response = asyncio.run(
+            the_sandbox.execute(
+                command=command,
             )
         )
 
