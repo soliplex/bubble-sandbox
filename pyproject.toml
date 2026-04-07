@@ -42,7 +42,9 @@ asyncio_mode = "auto"
 filterwarnings = []
 
 [tool.coverage.run]
-omit = []
+omit = [
+    "src/bubble_sandbox/cli/*.py",
+]
 
 [tool.coverage.report]
 show_missing = true
