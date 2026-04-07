@@ -161,19 +161,18 @@ def workdir_sandbox_args(
         return []
 
 
-def volumes_sandbox_args(volumes: list[bs_models.VolumeMount]) -> list[str]:
+def volumes_sandbox_args(volume_map: bs_models.VolumeMap) -> list[str]:
     """Return added 'bwrap' args based on the given volumes"""
     result = []
 
-    for volume in volumes:
-        if volume.writable:
-            result.extend(
-                ["--bind", str(volume.host_path), str(volume.sandbox_path)]
-            )
+    for volume_name, volume_info in volume_map.items():
+        sandbox_path = f"/sandbox/volumes/{volume_name}"
+        host_path = str(volume_info.host_path)
+
+        if volume_info.writable:
+            result.extend(["--bind", host_path, sandbox_path])
         else:
-            result.extend(
-                ["--ro-bind", str(volume.host_path), str(volume.sandbox_path)]
-            )
+            result.extend(["--ro-bind", host_path, sandbox_path])
 
     return result
 
@@ -182,9 +181,7 @@ def volumes_sandbox_args(volumes: list[bs_models.VolumeMount]) -> list[str]:
 class BwrapSandbox:
     default_environment_name: str
     config: bs_config.Config
-    volumes: list[bs_models.VolumeMount] = dataclasses.field(
-        default_factory=list,
-    )
+    volumes: bs_models.VolumeMap = dataclasses.field(default_factory=dict)
 
     def build_bwrap_command(
         self,
@@ -192,19 +189,19 @@ class BwrapSandbox:
         workdir_path: pathlib.Path | None,
         command: list[str],
         environment_name: str = None,
-        extra_volumes: list[bs_models.VolumeMount] = None,
+        extra_volumes: bs_models.VolumeMap = None,
     ) -> list[str]:
         if environment_name is None:
             environment_name = self.default_environment_name
 
         if extra_volumes is None:
-            extra_volumes = []
+            extra_volumes = {}
 
         return (
             core_sandbox_args()
             + venv_sandbox_args(environment_name, self.config)
             + workdir_sandbox_args(workdir_path)
-            + volumes_sandbox_args(self.volumes + extra_volumes)
+            + volumes_sandbox_args(self.volumes | extra_volumes)
             + command
         )
 

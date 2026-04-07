@@ -12,23 +12,18 @@ ENVIRONMENT_NAME = "test_environment"
 OTHER_ENVIRONMENT_NAME = "other_test_environment"
 WORKDIR_NAME = "test_workdir"
 HOST_VOLUME_PATH = pathlib.Path("/path/to/host/volume")
-SANDBOX_VOLUME_PATH = pathlib.Path("/sandbox/mounted/volume")
-VOLUME_RO = bs_models.VolumeMount(
+VOLUME_RO = bs_models.VolumeInfo(
     host_path=HOST_VOLUME_PATH,
-    sandbox_path=SANDBOX_VOLUME_PATH,
     writable=False,
 )
-VOLUME_RW = bs_models.VolumeMount(
+VOLUME_RW = bs_models.VolumeInfo(
     host_path=HOST_VOLUME_PATH,
-    sandbox_path=SANDBOX_VOLUME_PATH,
     writable=True,
 )
 
 OTHER_HOST_VOLUME_PATH = pathlib.Path("/path/to/host/other_volume")
-OTHER_SANDBOX_VOLUME_PATH = pathlib.Path("/sandbox/mounted/other_volume")
-OTHER_VOLUME_RO = bs_models.VolumeMount(
+OTHER_VOLUME_RO = bs_models.VolumeInfo(
     host_path=OTHER_HOST_VOLUME_PATH,
-    sandbox_path=OTHER_SANDBOX_VOLUME_PATH,
     writable=False,
 )
 
@@ -198,41 +193,38 @@ def test_workdir_sandbox_args_w_path(tmp_path: pathlib.Path):
 
 
 @pytest.mark.parametrize(
-    "volumes, expected",
+    "volume_map, expected",
     [
-        ([], []),
+        ({}, []),
         (
-            [VOLUME_RO],
+            {"readonly": VOLUME_RO},
             [
                 "--ro-bind",
                 str(HOST_VOLUME_PATH),
-                str(SANDBOX_VOLUME_PATH),
+                "/sandbox/volumes/readonly",
             ],
         ),
         (
-            [VOLUME_RW],
+            {"readwrite": VOLUME_RW},
             [
                 "--bind",
                 str(HOST_VOLUME_PATH),
-                str(SANDBOX_VOLUME_PATH),
+                "/sandbox/volumes/readwrite",
             ],
         ),
     ],
 )
-def test_volumes_sandbox_args(volumes, expected):
-    found = bs_sandbox.volumes_sandbox_args(volumes)
+def test_volumes_sandbox_args(volume_map, expected):
+    found = bs_sandbox.volumes_sandbox_args(volume_map)
 
     assert found == expected
 
 
 @pytest.mark.parametrize(
-    "xtra_vols_kwargs, exp_xtra_vols",
+    "xtra_vols_kwargs",
     [
-        ({}, []),
-        (
-            {"extra_volumes": [OTHER_VOLUME_RO]},
-            [OTHER_VOLUME_RO],
-        ),
+        {},
+        {"extra_volumes": {"other": OTHER_VOLUME_RO}},
     ],
 )
 @pytest.mark.parametrize(
@@ -259,14 +251,13 @@ def test_bwrapsandboxcommand_build_bwrap_command(
     env_kwargs,
     exp_env_name,
     xtra_vols_kwargs,
-    exp_xtra_vols,
 ):
     csa.return_value = ["CORE"]
     venvsa.return_value = ["VENV"]
     wdsa.return_value = ["WORKDIR"]
     volsa.return_value = ["VOLUMES"]
 
-    volumes = [VOLUME_RO]
+    volumes = {"readonly": VOLUME_RO}
     sandbox = bs_sandbox.BwrapSandbox(
         default_environment_name=ENVIRONMENT_NAME,
         config=sandbox_config,
@@ -276,6 +267,7 @@ def test_bwrapsandboxcommand_build_bwrap_command(
     workdir_path = tmp_path / "workdir"
     command = ["ls", "-laF"]
     expected = ["CORE", "VENV", "WORKDIR", "VOLUMES"] + command
+    exp_xtra_vols = xtra_vols_kwargs.get("extra_volumes", {})
 
     found = sandbox.build_bwrap_command(
         workdir_path=workdir_path,
@@ -289,7 +281,7 @@ def test_bwrapsandboxcommand_build_bwrap_command(
     csa.assert_called_once_with()
     venvsa.assert_called_once_with(exp_env_name, sandbox_config)
     wdsa.assert_called_once_with(workdir_path)
-    volsa.assert_called_once_with(volumes + exp_xtra_vols)
+    volsa.assert_called_once_with(volumes | exp_xtra_vols)
 
 
 @pytest.mark.asyncio
