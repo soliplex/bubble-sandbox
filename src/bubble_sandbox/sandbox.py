@@ -5,8 +5,8 @@ import pathlib
 import sys
 import tempfile
 
+from bubble_sandbox import config as bs_config
 from bubble_sandbox import models as bs_models
-from bubble_sandbox import settings as bs_settings
 
 _SYS_BASE_PREFIX = sys.base_prefix
 
@@ -63,7 +63,7 @@ class MaxUploadSizeExceded(ValueError):
 
 def resolve_venv_path(
     environment_name: str,
-    settings: bs_settings.Settings,
+    config: bs_config.Config,
 ) -> pathlib.Path:
     """Return the path to an environment's virtualenv"""
 
@@ -74,7 +74,7 @@ def resolve_venv_path(
     ):
         raise InvalidEnvironmenName(environment_name)
 
-    environment_path = settings.environments_path / environment_name
+    environment_path = config.environments_path / environment_name
 
     if not environment_path.is_dir():
         raise EnvironmentNotFound(environment_path)
@@ -89,19 +89,19 @@ def resolve_venv_path(
 
 def validate_uploads(
     files: dict[str, bytes],
-    settings: bs_settings.Settings,
+    config: bs_config.Config,
 ) -> None:
     total_size = 0
     for name, content in files.items():
         extension = pathlib.PurePosixPath(name).suffix.lower()
 
-        if extension not in settings.allowed_extensions:
-            raise ExtensionNotAllowed(extension, settings.allowed_extensions)
+        if extension not in config.allowed_extensions:
+            raise ExtensionNotAllowed(extension, config.allowed_extensions)
 
         total_size += len(content)
 
-    if total_size > settings.max_upload_size_bytes:
-        raise MaxUploadSizeExceded(total_size, settings.max_upload_size_bytes)
+    if total_size > config.max_upload_size_bytes:
+        raise MaxUploadSizeExceded(total_size, config.max_upload_size_bytes)
 
 
 def core_sandbox_args(network: bool = False) -> list[str]:
@@ -164,10 +164,10 @@ def core_sandbox_args(network: bool = False) -> list[str]:
 
 def venv_sandbox_args(
     env_name: str,
-    settings: bs_settings.Settings,
+    config: bs_config.Config,
 ) -> list[str]:
     """Return added 'bwrap' args based on the given sandbox environment"""
-    venv_path = resolve_venv_path(env_name, settings)
+    venv_path = resolve_venv_path(env_name, config)
 
     return [
         "--ro-bind",
@@ -216,7 +216,7 @@ def volumes_sandbox_args(volumes: list[bs_models.VolumeMount]) -> list[str]:
 @dataclasses.dataclass(kw_only=True)
 class BwrapSandbox:
     default_environment_name: str
-    settings: bs_settings.Settings
+    config: bs_config.Config
     volumes: list[bs_models.VolumeMount] = dataclasses.field(
         default_factory=list,
     )
@@ -237,7 +237,7 @@ class BwrapSandbox:
 
         return (
             core_sandbox_args()
-            + venv_sandbox_args(environment_name, self.settings)
+            + venv_sandbox_args(environment_name, self.config)
             + workdir_sandbox_args(workdir_path)
             + volumes_sandbox_args(self.volumes + extra_volumes)
             + command
@@ -285,7 +285,7 @@ class BwrapSandbox:
     ) -> bs_models.ExecuteResult:
 
         if timeout is None:
-            timeout = self.settings.execution_timeout_seconds
+            timeout = self.config.execution_timeout_seconds
 
         bwrap_command = self.build_bwrap_command(
             command=command,
@@ -315,10 +315,10 @@ class BwrapSandbox:
         stdout = stdout.decode("utf-8", errors="replace")
         stderr = stderr.decode("utf-8", errors="replace")
         output = stdout + stderr
-        truncated = len(output) > self.settings.max_output_chars
+        truncated = len(output) > self.config.max_output_chars
 
         if truncated:
-            output = output[: self.settings.max_output_chars]
+            output = output[: self.config.max_output_chars]
 
         return bs_models.ExecuteResult(
             output=output,
@@ -391,9 +391,9 @@ async def execute_in_sandbox(
     script: str,
     env_name: str,
     files: dict[str, bytes],
-    settings: bs_settings.Settings,
+    config: bs_config.Config,
 ) -> bs_models.ScriptResult:
-    venv_path = resolve_venv_path(env_name, settings)
+    venv_path = resolve_venv_path(env_name, config)
     with tempfile.TemporaryDirectory(
         prefix="exec-",
         ignore_cleanup_errors=True,
@@ -423,7 +423,7 @@ async def execute_in_sandbox(
         try:
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(),
-                timeout=settings.execution_timeout_seconds,
+                timeout=config.execution_timeout_seconds,
             )
         except TimeoutError:
             proc.kill()

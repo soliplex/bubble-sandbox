@@ -4,8 +4,8 @@ import logging
 
 import pytest
 
+from bubble_sandbox import config as bs_config
 from bubble_sandbox import logging as bs_logging
-from bubble_sandbox import settings as bs_settings
 
 LOGGER_NAME = "test"
 LOG_RECORD_LEVEL = logging.INFO
@@ -68,7 +68,7 @@ def test_jsonlogger_exception_formatting(log_record):
 
 
 def test_configure_audit_logging():
-    settings = bs_settings.Settings()
+    config = bs_config.Config()
 
     root_logger = logging.root
 
@@ -84,7 +84,7 @@ def test_configure_audit_logging():
     before_handlers = set(root_logger.handlers)
     before_settings = _root_settings()
 
-    bs_logging.configure_audit_logging(settings)
+    bs_logging.configure_audit_logging(config)
 
     # Check that we made no changes to root logger.
     after_handlers = set(root_logger.handlers)

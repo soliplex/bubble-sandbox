@@ -24,7 +24,7 @@ DEFAULT_MAX_SESSION_COUNT = 50
 DEFAULT_LOG_LEVEL = logging.getLevelName(logging.INFO)
 
 
-class Settings(pydantic_settings.BaseSettings):
+class Config(pydantic_settings.BaseSettings):
     model_config = pydantic_settings.SettingsConfigDict(
         env_prefix="BUBBLE_SANDBOX_",
     )
@@ -42,5 +42,5 @@ class Settings(pydantic_settings.BaseSettings):
 
 
 @functools.lru_cache
-def get_settings() -> Settings:
-    return Settings()
+def get_config() -> Config:
+    return Config()

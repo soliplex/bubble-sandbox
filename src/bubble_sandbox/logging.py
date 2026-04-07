@@ -2,7 +2,7 @@ import datetime
 import json
 import logging
 
-from bubble_sandbox import settings as bs_settings
+from bubble_sandbox import config as bs_config
 
 AUDIT_LOGGER_NAME = "bubble_sandbox.AUDIT"
 
@@ -37,7 +37,7 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(obj, default=str)
 
 
-def configure_audit_logging(settings: bs_settings.Settings) -> None:
+def configure_audit_logging(config: bs_config.Config) -> None:
     """Configure AUDIT logger
 
     Note that we do *not* mess with the root logger.
@@ -46,7 +46,7 @@ def configure_audit_logging(settings: bs_settings.Settings) -> None:
     handler.setFormatter(JsonFormatter())
 
     audit = logging.getLogger(AUDIT_LOGGER_NAME)
-    audit.setLevel(settings.log_level)
+    audit.setLevel(config.log_level)
     audit.propagate = False
     audit.handlers.clear()
     audit.addHandler(handler)

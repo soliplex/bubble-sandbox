@@ -5,8 +5,8 @@ import pathlib
 import shutil
 import uuid
 
+from bubble_sandbox import config as bs_config
 from bubble_sandbox import models as bs_models
-from bubble_sandbox import settings as bs_settings
 
 logger = logging.getLogger(__name__)
 
@@ -70,9 +70,9 @@ class SessionState:
 
 
 class SessionStore:
-    def __init__(self, settings: bs_settings.Settings) -> None:
+    def __init__(self, config: bs_config.Config) -> None:
         self._sessions: dict[str, SessionState] = {}
-        self._settings = settings
+        self._settings = config
         self._cleanup_task: asyncio.Task[None] | None = None
 
     def create(

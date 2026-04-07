@@ -5,15 +5,15 @@ from unittest import mock
 
 import pytest
 
+from bubble_sandbox import config as bs_config
 from bubble_sandbox import sessions as bs_sessions
-from bubble_sandbox import settings as bs_settings
 
 
 @pytest.fixture
-def store_settings(tmp_path: pathlib.Path) -> bs_settings.Settings:
+def store_config(tmp_path: pathlib.Path) -> bs_config.Config:
     environments_path = tmp_path / "environments"
     environments_path.mkdir()
-    return bs_settings.Settings(
+    return bs_config.Config(
         environments_path=environments_path,
         max_session_count=3,
         session_idle_timeout_seconds=1,
@@ -51,12 +51,12 @@ def mock_path_exists():
 
 @pytest.fixture
 def store(
-    store_settings: bs_settings.Settings,
+    store_config: bs_config.Config,
     mock_mkdir,
     mock_rmtree,
     mock_path_exists,
 ) -> bs_sessions.SessionStore:
-    return bs_sessions.SessionStore(store_settings)
+    return bs_sessions.SessionStore(store_config)
 
 
 def test_sessionstate_to_info(store):
@@ -112,12 +112,12 @@ def test_sessionstore_create(store, mock_mkdir):
 
 def test_sessionstore_create_makes_session_dir(
     store,
-    store_settings,
+    store_config,
     mock_mkdir,
 ):
     session, _ = store.create("bare", session_id="abc")
 
-    expected = store_settings.workspace_path / "sessions" / "abc"
+    expected = store_config.workspace_path / "sessions" / "abc"
     assert session.workdir == expected
     mock_mkdir.assert_any_call(
         parents=True,
@@ -151,7 +151,7 @@ def test_sessionstore_create_conflict(store):
 
 
 def test_sessionstore_create_volume_dirs(
-    store_settings,
+    store_config,
     store,
     mock_mkdir,
 ):
@@ -252,13 +252,13 @@ def test_sessionstore_destroy_missing(store):
 
 
 def test_sessionstore_destroy_persistence_policy(
-    store_settings,
+    store_config,
     mock_mkdir,
     mock_rmtree,
     mock_path_exists,
 ):
-    store_settings.allow_persistent_sessions = False
-    s = bs_sessions.SessionStore(store_settings)
+    store_config.allow_persistent_sessions = False
+    s = bs_sessions.SessionStore(store_config)
     s.create("bare", session_id="sess")
 
     with pytest.raises(bs_sessions.PersistentSessionsDisabled):
@@ -321,13 +321,13 @@ def test_sessionstore_shutdown(store):
 
 
 def test_sessionstore_shutdown_persistence_policy(
-    store_settings,
+    store_config,
     mock_mkdir,
     mock_rmtree,
     mock_path_exists,
 ):
-    store_settings.allow_persistent_sessions = False
-    s = bs_sessions.SessionStore(store_settings)
+    store_config.allow_persistent_sessions = False
+    s = bs_sessions.SessionStore(store_config)
     s.create("bare")
 
     with pytest.raises(bs_sessions.PersistentSessionsDisabled):

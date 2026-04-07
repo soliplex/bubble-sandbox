@@ -9,8 +9,8 @@ import typer
 import yaml
 from rich import console
 
-from bubble_sandbox import sandbox
-from bubble_sandbox import settings
+from bubble_sandbox import config as bs_config
+from bubble_sandbox import sandbox as bs_sandbox
 
 
 the_cli = typer.Typer(
@@ -25,15 +25,17 @@ the_cli = typer.Typer(
 the_console = console.Console()
 
 
-settings_path_option: pathlib.Path = typer.Option(
+config_file_option: pathlib.Path = typer.Option(
     None,
-    "--settings",
-    help="Settings file",
+    "-c",
+    "--config",
+    help="Config file",
 )
 
 
 script_option: str = typer.Option(
     None,
+    "-s",
     "--script",
     help="Script as string",
 )
@@ -41,6 +43,7 @@ script_option: str = typer.Option(
 
 script_file_option: pathlib.Path = typer.Option(
     None,
+    "-f",
     "--script-file",
     help="Script as filename",
 )
@@ -48,6 +51,7 @@ script_file_option: pathlib.Path = typer.Option(
 
 environment_name_option: str = typer.Option(
     None,
+    "-e",
     "--environment",
     help="Environment name",
 )
@@ -73,16 +77,15 @@ def app(
     """bubble-sandbox CLI"""
 
 
-def get_the_settings(settings_path: pathlib.Path | None) -> settings.Settings:
-    if settings_path is not None:
+def get_the_config(config_file: pathlib.Path | None) -> bs_config.Config:
+    if config_file is not None:
 
-        with open(settings_path) as f:
-            settings_dict = yaml.safe_load(f)
+        with open(config_file) as f:
+            config_dict = yaml.safe_load(f)
 
-        the_settings = settings.Settings.model_validate(settings_dict)
-        return the_settings
+        return bs_config.Config.model_validate(config_dict)
     else:
-        return settings.get_settings()
+        return bs_config.get_config()
 
 
 @the_cli.command(
@@ -90,15 +93,15 @@ def get_the_settings(settings_path: pathlib.Path | None) -> settings.Settings:
 )
 def list_environments(
     ctx: typer.Context,
-    settings_path: pathlib.Path = settings_path_option,
+    config_file: pathlib.Path = config_file_option,
 ):
     """List environments defined in the given path"""
     the_console.line()
     the_console.rule("Available environments")
     the_console.line()
 
-    the_settings = get_the_settings(settings_path)
-    root = the_settings.environments_path
+    the_config = get_the_config(config_file)
+    root = the_config.environments_path
 
     for subpath in sorted(root.glob("*")):
         if (subpath / ".venv").is_dir():
@@ -112,17 +115,17 @@ def list_environments(
 )
 def exec_script(
     ctx: typer.Context,
-    settings_path: pathlib.Path = settings_path_option,
+    config_file: pathlib.Path = config_file_option,
     script: str | None = script_option,
     script_file: pathlib.Path | None = script_file_option,
     environment_name: str = environment_name_option,
 ):
     """Run a script / script file in a given environment"""
-    the_settings = get_the_settings(settings_path)
+    the_config = get_the_config(config_file)
 
-    the_sandbox = sandbox.BwrapSandbox(
+    the_sandbox = bs_sandbox.BwrapSandbox(
         default_environment_name=environment_name,
-        settings=the_settings,
+        config=the_config,
     )
     if script is not None:
         str_or_file = f"'{script}'"

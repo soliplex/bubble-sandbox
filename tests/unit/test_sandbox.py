@@ -5,9 +5,9 @@ from unittest import mock
 
 import pytest
 
+from bubble_sandbox import config as bs_config
 from bubble_sandbox import models as bs_models
 from bubble_sandbox import sandbox as bs_sandbox
-from bubble_sandbox import settings as bs_settings
 
 ENVIRONMENT_NAME = "test_environment"
 OTHER_ENVIRONMENT_NAME = "other_test_environment"
@@ -38,62 +38,62 @@ OTHER_VOLUME_RO = bs_models.VolumeMount(
     "name",
     ["../etc", "foo/bar", "foo\\bar", ".."],
 )
-def test_resolve_venv_path_w_path_traversal_rejected(sandbox_settings, name):
+def test_resolve_venv_path_w_path_traversal_rejected(sandbox_config, name):
     with pytest.raises(bs_sandbox.InvalidEnvironmenName):
-        bs_sandbox.resolve_venv_path(name, sandbox_settings)
+        bs_sandbox.resolve_venv_path(name, sandbox_config)
 
 
-def test_resolve_venv_path_w_missing_env_dir(sandbox_settings):
+def test_resolve_venv_path_w_missing_env_dir(sandbox_config):
     with pytest.raises(bs_sandbox.EnvironmentNotFound):
-        bs_sandbox.resolve_venv_path("nonexistent", sandbox_settings)
+        bs_sandbox.resolve_venv_path("nonexistent", sandbox_config)
 
 
-def test_resolve_venv_path_w_missing_venv(sandbox_settings):
-    environment_path = sandbox_settings.environments_path / "no-venv"
+def test_resolve_venv_path_w_missing_venv(sandbox_config):
+    environment_path = sandbox_config.environments_path / "no-venv"
     environment_path.mkdir()
 
     with pytest.raises(bs_sandbox.EnvironmentNotInitialized):
-        bs_sandbox.resolve_venv_path("no-venv", sandbox_settings)
+        bs_sandbox.resolve_venv_path("no-venv", sandbox_config)
 
 
-def test_resolve_venv_path_w_valid_env(sandbox_settings, bare_environment):
+def test_resolve_venv_path_w_valid_env(sandbox_config, bare_environment):
     expected = bare_environment / ".venv"
 
-    found = bs_sandbox.resolve_venv_path("bare", sandbox_settings)
+    found = bs_sandbox.resolve_venv_path("bare", sandbox_config)
 
     assert found == expected
 
 
-def test_validate_uploads_w_invalid_extension(sandbox_settings):
+def test_validate_uploads_w_invalid_extension(sandbox_config):
     files = {"script.py": b"import os"}
 
     with pytest.raises(bs_sandbox.ExtensionNotAllowed):
-        bs_sandbox.validate_uploads(files, sandbox_settings)
+        bs_sandbox.validate_uploads(files, sandbox_config)
 
 
-def test_validate_uploads_w_oversized_upload(sandbox_settings):
-    sandbox_settings.max_upload_size_bytes = 10
+def test_validate_uploads_w_oversized_upload(sandbox_config):
+    sandbox_config.max_upload_size_bytes = 10
     files = {"big.csv": b"x" * 20}
 
     with pytest.raises(bs_sandbox.MaxUploadSizeExceded):
-        bs_sandbox.validate_uploads(files, sandbox_settings)
+        bs_sandbox.validate_uploads(files, sandbox_config)
 
 
-def test_validate_uploads_w_valid_uploads(sandbox_settings):
+def test_validate_uploads_w_valid_uploads(sandbox_config):
     files = {
         "data.csv": b"a,b,c",
         "notes.txt": b"hello",
     }
-    bs_sandbox.validate_uploads(files, sandbox_settings)  # no raise
+    bs_sandbox.validate_uploads(files, sandbox_config)  # no raise
 
 
-def test_validate_uploads_w_empty_files(sandbox_settings):
-    bs_sandbox.validate_uploads({}, sandbox_settings)  # no raise
+def test_validate_uploads_w_empty_files(sandbox_config):
+    bs_sandbox.validate_uploads({}, sandbox_config)  # no raise
 
 
-def test_validate_uploads_w_extension_case_insensitive(sandbox_settings):
+def test_validate_uploads_w_extension_case_insensitive(sandbox_config):
     files = {"DATA.CSV": b"a,b"}
-    bs_sandbox.validate_uploads(files, sandbox_settings)  # no raise
+    bs_sandbox.validate_uploads(files, sandbox_config)  # no raise
 
 
 def _extract_multis(cmd):
@@ -190,11 +190,11 @@ def test_core_sandbox_args(
 
 
 @mock.patch("bubble_sandbox.sandbox.resolve_venv_path")
-def test_venv_sandbox_args(rvp, sandbox_settings):
-    venv_path = sandbox_settings.environments_path / ENVIRONMENT_NAME
+def test_venv_sandbox_args(rvp, sandbox_config):
+    venv_path = sandbox_config.environments_path / ENVIRONMENT_NAME
     rvp.return_value = venv_path
 
-    found = bs_sandbox.venv_sandbox_args(ENVIRONMENT_NAME, sandbox_settings)
+    found = bs_sandbox.venv_sandbox_args(ENVIRONMENT_NAME, sandbox_config)
 
     multis = _extract_multis(found)
 
@@ -285,7 +285,7 @@ def test_bwrapsandboxcommand_build_bwrap_command(
     wdsa,
     volsa,
     tmp_path,
-    sandbox_settings,
+    sandbox_config,
     env_kwargs,
     exp_env_name,
     xtra_vols_kwargs,
@@ -299,7 +299,7 @@ def test_bwrapsandboxcommand_build_bwrap_command(
     volumes = [VOLUME_RO]
     sandbox = bs_sandbox.BwrapSandbox(
         default_environment_name=ENVIRONMENT_NAME,
-        settings=sandbox_settings,
+        config=sandbox_config,
         volumes=volumes,
     )
 
@@ -317,7 +317,7 @@ def test_bwrapsandboxcommand_build_bwrap_command(
     assert found == expected
 
     csa.assert_called_once_with()
-    venvsa.assert_called_once_with(exp_env_name, sandbox_settings)
+    venvsa.assert_called_once_with(exp_env_name, sandbox_config)
     wdsa.assert_called_once_with(workdir_path)
     volsa.assert_called_once_with(volumes + exp_xtra_vols)
 
@@ -330,7 +330,7 @@ async def test_bwrapsandboxcommand_execute_script_w_success(
     cs_exec,
     tftd,
     tmp_path,
-    sandbox_settings,
+    sandbox_config,
     bare_environment,
     w_workdir,
 ):
@@ -352,7 +352,7 @@ async def test_bwrapsandboxcommand_execute_script_w_success(
 
     sandbox = bs_sandbox.BwrapSandbox(
         default_environment_name="bare",
-        settings=sandbox_settings,
+        config=sandbox_config,
     )
 
     found = await sandbox.execute_script(script=script, **kwargs)
@@ -368,12 +368,12 @@ async def test_bwrapsandboxcommand_execute_script_w_success(
 async def test_bwrapsandboxcommand_execute_script_w_truncation(
     cs_exec,
     tmp_path,
-    sandbox_settings,
+    sandbox_config,
     bare_environment,
 ):
     MUST_TRUNCATE = b"X" * 100
 
-    sandbox_settings.max_output_chars = 50
+    sandbox_config.max_output_chars = 50
     proc = cs_exec.return_value
     proc.communicate.return_value = (MUST_TRUNCATE, b"")
     proc.returncode = 0
@@ -385,7 +385,7 @@ async def test_bwrapsandboxcommand_execute_script_w_truncation(
 
     sandbox = bs_sandbox.BwrapSandbox(
         default_environment_name="bare",
-        settings=sandbox_settings,
+        config=sandbox_config,
     )
 
     found = await sandbox.execute_script(script=script, workdir=workdir)
@@ -412,7 +412,7 @@ async def test_bwrapsandboxcommand_execute_script_w_truncation(
 async def test_bwrapsandboxcommand_execute_script_w_error(
     cs_exec,
     tmp_path,
-    sandbox_settings,
+    sandbox_config,
     bare_environment,
 ):
     proc = cs_exec.return_value
@@ -426,7 +426,7 @@ async def test_bwrapsandboxcommand_execute_script_w_error(
 
     sandbox = bs_sandbox.BwrapSandbox(
         default_environment_name="bare",
-        settings=sandbox_settings,
+        config=sandbox_config,
     )
 
     found = await sandbox.execute_script(script=script, workdir=workdir)
@@ -443,7 +443,7 @@ async def test_bwrapsandboxcommand_execute_script_w_timeout(
     cs_exec,
     wait_for,
     tmp_path,
-    sandbox_settings,
+    sandbox_config,
     bare_environment,
 ):
     proc = cs_exec.return_value
@@ -463,7 +463,7 @@ async def test_bwrapsandboxcommand_execute_script_w_timeout(
 
     sandbox = bs_sandbox.BwrapSandbox(
         default_environment_name="bare",
-        settings=sandbox_settings,
+        config=sandbox_config,
     )
 
     found = await sandbox.execute_script(
@@ -492,7 +492,7 @@ async def test_bwrapsandboxcommand_execute_script_w_timeout(
 async def test_bwrapsandboxcommand_execute_w_success(
     cs_exec,
     tmp_path,
-    sandbox_settings,
+    sandbox_config,
     bare_environment,
 ):
     proc = cs_exec.return_value
@@ -506,7 +506,7 @@ async def test_bwrapsandboxcommand_execute_w_success(
 
     sandbox = bs_sandbox.BwrapSandbox(
         default_environment_name="bare",
-        settings=sandbox_settings,
+        config=sandbox_config,
     )
 
     found = await sandbox.execute(command=command, workdir=workdir)
@@ -533,7 +533,7 @@ async def test_bwrapsandboxcommand_execute_w_success(
 async def test_bwrapsandboxcommand_execute_wo_workdir(
     cs_exec,
     tmp_path,
-    sandbox_settings,
+    sandbox_config,
     bare_environment,
 ):
     proc = cs_exec.return_value
@@ -547,7 +547,7 @@ async def test_bwrapsandboxcommand_execute_wo_workdir(
 
     sandbox = bs_sandbox.BwrapSandbox(
         default_environment_name="bare",
-        settings=sandbox_settings,
+        config=sandbox_config,
     )
 
     found = await sandbox.execute(command=command)
@@ -563,12 +563,12 @@ async def test_bwrapsandboxcommand_execute_wo_workdir(
 async def test_bwrapsandboxcommand_execute_w_truncation(
     cs_exec,
     tmp_path,
-    sandbox_settings,
+    sandbox_config,
     bare_environment,
 ):
     MUST_TRUNCATE = b"X" * 100
 
-    sandbox_settings.max_output_chars = 50
+    sandbox_config.max_output_chars = 50
     proc = cs_exec.return_value
     proc.communicate.return_value = (MUST_TRUNCATE, b"")
     proc.returncode = 0
@@ -581,7 +581,7 @@ async def test_bwrapsandboxcommand_execute_w_truncation(
 
     sandbox = bs_sandbox.BwrapSandbox(
         default_environment_name="bare",
-        settings=sandbox_settings,
+        config=sandbox_config,
     )
 
     found = await sandbox.execute(command=command, workdir=workdir)
@@ -598,7 +598,7 @@ async def test_bwrapsandboxcommand_execute_w_truncation(
 async def test_bwrapsandboxcommand_execute_w_error(
     cs_exec,
     tmp_path,
-    sandbox_settings,
+    sandbox_config,
     bare_environment,
 ):
     proc = cs_exec.return_value
@@ -613,7 +613,7 @@ async def test_bwrapsandboxcommand_execute_w_error(
 
     sandbox = bs_sandbox.BwrapSandbox(
         default_environment_name="bare",
-        settings=sandbox_settings,
+        config=sandbox_config,
     )
 
     found = await sandbox.execute(command=command, workdir=workdir)
@@ -630,7 +630,7 @@ async def test_bwrapsandboxcommand_execute_w_timeout(
     cs_exec,
     wait_for,
     tmp_path,
-    sandbox_settings,
+    sandbox_config,
     bare_environment,
 ):
     proc = cs_exec.return_value
@@ -651,7 +651,7 @@ async def test_bwrapsandboxcommand_execute_w_timeout(
 
     sandbox = bs_sandbox.BwrapSandbox(
         default_environment_name="bare",
-        settings=sandbox_settings,
+        config=sandbox_config,
     )
 
     found = await sandbox.execute(
@@ -795,18 +795,18 @@ def _mock_process(stdout=b"", stderr=b"", returncode=0):
     return proc
 
 
-async def test_execute_in_sandbox_w_env_not_found(sandbox_settings):
+async def test_execute_in_sandbox_w_env_not_found(sandbox_config):
     with pytest.raises(bs_sandbox.EnvironmentNotFound):
         await bs_sandbox.execute_in_sandbox(
             script="ok",
             env_name="nope",
             files={},
-            settings=sandbox_settings,
+            config=sandbox_config,
         )
 
 
-async def test_execute_in_sandbox_w_success(sandbox_settings):
-    _create_env(sandbox_settings.environments_path, "bare")
+async def test_execute_in_sandbox_w_success(sandbox_config):
+    _create_env(sandbox_config.environments_path, "bare")
     proc = _mock_process(stdout=b"hello\n", returncode=0)
 
     with mock.patch(
@@ -817,7 +817,7 @@ async def test_execute_in_sandbox_w_success(sandbox_settings):
             script='print("hello")',
             env_name="bare",
             files={},
-            settings=sandbox_settings,
+            config=sandbox_config,
         )
 
     assert isinstance(result, bs_models.ScriptResult)
@@ -826,8 +826,8 @@ async def test_execute_in_sandbox_w_success(sandbox_settings):
     assert result.return_code == 0
 
 
-async def test_execute_in_sandbox_w_with_files(sandbox_settings):
-    _create_env(sandbox_settings.environments_path, "bare")
+async def test_execute_in_sandbox_w_with_files(sandbox_config):
+    _create_env(sandbox_config.environments_path, "bare")
     proc = _mock_process(stdout=b"ok")
 
     with mock.patch(
@@ -838,14 +838,14 @@ async def test_execute_in_sandbox_w_with_files(sandbox_settings):
             script="print('ok')",
             env_name="bare",
             files={"data.csv": b"a,b,c"},
-            settings=sandbox_settings,
+            config=sandbox_config,
         )
 
     assert result.stdout == "ok"
 
 
-async def test_execute_in_sandbox_w_nonzero_exit(sandbox_settings):
-    _create_env(sandbox_settings.environments_path, "bare")
+async def test_execute_in_sandbox_w_nonzero_exit(sandbox_config):
+    _create_env(sandbox_config.environments_path, "bare")
     proc = _mock_process(stderr=b"error", returncode=1)
 
     with mock.patch(
@@ -856,16 +856,16 @@ async def test_execute_in_sandbox_w_nonzero_exit(sandbox_settings):
             script="bad",
             env_name="bare",
             files={},
-            settings=sandbox_settings,
+            config=sandbox_config,
         )
 
     assert result.return_code == 1
     assert result.stderr == "error"
 
 
-async def test_execute_in_sandbox_w_timeout(sandbox_settings):
-    sandbox_settings.execution_timeout_seconds = 0.01
-    _create_env(sandbox_settings.environments_path, "bare")
+async def test_execute_in_sandbox_w_timeout(sandbox_config):
+    sandbox_config.execution_timeout_seconds = 0.01
+    _create_env(sandbox_config.environments_path, "bare")
 
     proc = _mock_process(stdout=b"times out")
 
@@ -883,7 +883,7 @@ async def test_execute_in_sandbox_w_timeout(sandbox_settings):
             script="import time; time.sleep(100)",
             env_name="bare",
             files={},
-            settings=sandbox_settings,
+            config=sandbox_config,
         )
 
     assert result.return_code == -1
@@ -901,8 +901,8 @@ async def test_execute_in_sandbox_w_timeout(sandbox_settings):
     await args[0]  # avoid tracemalloc warning
 
 
-async def test_execute_in_sandbox_w_file_path_sanitized(sandbox_settings):
-    _create_env(sandbox_settings.environments_path, "bare")
+async def test_execute_in_sandbox_w_file_path_sanitized(sandbox_config):
+    _create_env(sandbox_config.environments_path, "bare")
     proc = _mock_process(stdout=b"ok")
 
     created_files: list[str] = []
@@ -927,17 +927,17 @@ async def test_execute_in_sandbox_w_file_path_sanitized(sandbox_settings):
             script="ok",
             env_name="bare",
             files={"../../etc/passwd.csv": b"sneaky"},
-            settings=sandbox_settings,
+            config=sandbox_config,
         )
 
     assert "passwd.csv" in created_files
     assert "../../etc/passwd.csv" not in created_files
 
 
-async def test_execute_command_in_sandbox_w_success(sandbox_settings):
-    _create_env(sandbox_settings.environments_path, "bare")
-    venv = bs_sandbox.resolve_venv_path("bare", sandbox_settings)
-    workdir = sandbox_settings.environments_path / "bare"
+async def test_execute_command_in_sandbox_w_success(sandbox_config):
+    _create_env(sandbox_config.environments_path, "bare")
+    venv = bs_sandbox.resolve_venv_path("bare", sandbox_config)
+    workdir = sandbox_config.environments_path / "bare"
 
     proc = _mock_process(stdout=b"hello\n", returncode=0)
 
@@ -957,10 +957,10 @@ async def test_execute_command_in_sandbox_w_success(sandbox_settings):
     assert result.truncated is False
 
 
-async def test_execute_command_in_sandbox_w_stderr_appended(sandbox_settings):
-    _create_env(sandbox_settings.environments_path, "bare")
-    venv = bs_sandbox.resolve_venv_path("bare", sandbox_settings)
-    workdir = sandbox_settings.environments_path / "bare"
+async def test_execute_command_in_sandbox_w_stderr_appended(sandbox_config):
+    _create_env(sandbox_config.environments_path, "bare")
+    venv = bs_sandbox.resolve_venv_path("bare", sandbox_config)
+    workdir = sandbox_config.environments_path / "bare"
 
     proc = _mock_process(stdout=b"out", stderr=b"err", returncode=0)
 
@@ -977,10 +977,10 @@ async def test_execute_command_in_sandbox_w_stderr_appended(sandbox_settings):
     assert result.output == "outerr"
 
 
-async def test_execute_command_in_sandbox_w_timeout(sandbox_settings):
-    _create_env(sandbox_settings.environments_path, "bare")
-    venv = bs_sandbox.resolve_venv_path("bare", sandbox_settings)
-    workdir = sandbox_settings.environments_path / "bare"
+async def test_execute_command_in_sandbox_w_timeout(sandbox_config):
+    _create_env(sandbox_config.environments_path, "bare")
+    venv = bs_sandbox.resolve_venv_path("bare", sandbox_config)
+    workdir = sandbox_config.environments_path / "bare"
 
     proc = _mock_process(stdout=b"times out")
 
@@ -1015,10 +1015,10 @@ async def test_execute_command_in_sandbox_w_timeout(sandbox_settings):
     await args[0]  # avoid tracemalloc warning
 
 
-async def test_execute_command_in_sandbox_w_truncation(sandbox_settings):
-    _create_env(sandbox_settings.environments_path, "bare")
-    venv = bs_sandbox.resolve_venv_path("bare", sandbox_settings)
-    workdir = sandbox_settings.environments_path / "bare"
+async def test_execute_command_in_sandbox_w_truncation(sandbox_config):
+    _create_env(sandbox_config.environments_path, "bare")
+    venv = bs_sandbox.resolve_venv_path("bare", sandbox_config)
+    workdir = sandbox_config.environments_path / "bare"
 
     big_output = b"x" * 200_000
     proc = _mock_process(stdout=big_output, returncode=0)
@@ -1036,10 +1036,10 @@ async def test_execute_command_in_sandbox_w_truncation(sandbox_settings):
     assert len(result.output) == 100_000
 
 
-async def test_execute_command_in_sandbox_w_default_timeout(sandbox_settings):
-    _create_env(sandbox_settings.environments_path, "bare")
-    venv = bs_sandbox.resolve_venv_path("bare", sandbox_settings)
-    workdir = sandbox_settings.environments_path / "bare"
+async def test_execute_command_in_sandbox_w_default_timeout(sandbox_config):
+    _create_env(sandbox_config.environments_path, "bare")
+    venv = bs_sandbox.resolve_venv_path("bare", sandbox_config)
+    workdir = sandbox_config.environments_path / "bare"
 
     proc = _mock_process(stdout=b"times out", returncode=0)
 
@@ -1067,7 +1067,7 @@ async def test_execute_command_in_sandbox_w_default_timeout(sandbox_settings):
 
     ((args, kwargs),) = mock_wait_for.call_args_list
     assert kwargs == {
-        "timeout": bs_settings.DEFAULT_EXECUTION_TIMEOUT_SECS,
+        "timeout": bs_config.DEFAULT_EXECUTION_TIMEOUT_SECS,
     }
 
     proc.communicate.assert_not_awaited()
