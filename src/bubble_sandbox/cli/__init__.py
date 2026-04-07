@@ -8,6 +8,7 @@ import typer
 import yaml
 
 from bubble_sandbox import config as bs_config
+from bubble_sandbox import models as bs_models
 from bubble_sandbox import sandbox as bs_sandbox
 
 the_cli = typer.Typer(
@@ -57,6 +58,29 @@ exec_command_args = typing.Annotated[
         help="Arguments to 'exec-command'",
     ),
 ]
+volume_option: list[str] = typer.Option(
+    None,
+    "-v",
+    "--volume",
+    help=(
+        "Volume info, formatted as a comma-separated string: "
+        "'volume_name,host_path,writable' (repeatable)"
+    ),
+)
+
+
+def extract_volume_map(volumes: list[str]) -> bs_models.VolumeMap:
+    result = {}
+
+    for volume in volumes:
+        name, host_path, *flags = volume.split(",")
+        writable = "rw" in flags
+        result[name] = bs_models.VolumeInfo(
+            host_path=host_path,
+            writable=writable,
+        )
+
+    return result
 
 
 def version_callback(value: bool):
@@ -121,6 +145,7 @@ def exec_script(
     script_file: pathlib.Path | None = script_file_option,
     environment_name: str = environment_name_option,
     workdir: pathlib.Path | None = workdir_option,
+    volumes: list[str] = volume_option,
 ):
     """Run a script / script file in a given environment"""
     the_config = get_the_config(config_file)
@@ -128,6 +153,7 @@ def exec_script(
     the_sandbox = bs_sandbox.BwrapSandbox(
         default_environment_name=environment_name,
         config=the_config,
+        volumes=extract_volume_map(volumes),
     )
     if script is not None:
         str_or_file = f"'{script}'"
@@ -171,6 +197,7 @@ def execute(
     config_file: pathlib.Path = config_file_option,
     environment_name: str = environment_name_option,
     workdir: pathlib.Path | None = workdir_option,
+    volumes: list[str] = volume_option,
 ):
     """Run a command line in a given environment"""
     the_config = get_the_config(config_file)
@@ -178,6 +205,7 @@ def execute(
     the_sandbox = bs_sandbox.BwrapSandbox(
         default_environment_name=environment_name,
         config=the_config,
+        volumes=extract_volume_map(volumes),
     )
 
     the_console.line()
@@ -216,6 +244,7 @@ def exec_command(
     config_file: pathlib.Path = config_file_option,
     environment_name: str = environment_name_option,
     workdir: pathlib.Path | None = workdir_option,
+    volumes: list[str] = volume_option,
 ):
     """Run a shell command in a given environment"""
     the_config = get_the_config(config_file)
@@ -223,6 +252,7 @@ def exec_command(
     the_sandbox = bs_sandbox.BwrapSandbox(
         default_environment_name=environment_name,
         config=the_config,
+        volumes=extract_volume_map(volumes),
     )
 
     the_console.line()
