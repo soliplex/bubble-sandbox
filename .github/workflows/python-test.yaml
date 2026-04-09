@@ -56,7 +56,7 @@ jobs:
           .venv/bin/pip install --upgrade pip setuptools
           .venv/bin/pip install -e .
 
-      - name: Setup 'bare' environment
+      - name: Setup 'pandas-only' environment
         working-directory: "environments/pandas-only"
         run: |
           python -m venv .venv
