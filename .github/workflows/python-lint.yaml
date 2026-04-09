@@ -1,0 +1,50 @@
+name: Python linting
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'pyproject.toml'
+      - 'src/bubble_sandbox/**'
+      - 'tests/**'
+      - '.github/workflows/python-lint.yaml'
+      - 'uv.lock'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'pyproject.toml'
+      - 'src/bubble_sandbox/**'
+      - 'tests/**'
+      - '.github/workflows/python-lint.yaml'
+      - 'uv.lock'
+  workflow_dispatch:
+
+jobs:
+  lint-bubble-sandbox:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools
+          pip install -e . --group dev
+
+      - name: Check formatting
+        run: ruff format --check
+
+      - name: Run ruff linter
+        run: ruff check
