@@ -49,6 +49,20 @@ jobs:
           python -m pip install --upgrade pip setuptools
           pip install -e . --group dev
 
+      - name: Setup 'bare' environment
+        working-directory: "environments/bare"
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip setuptools
+          .venv/bin/pip install -e .
+
+      - name: Setup 'bare' environment
+        working-directory: "environments/pandas-only"
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip setuptools
+          .venv/bin/pip install -e .
+
       - name: Run unit tests with coverage
         run: |
           pip list
