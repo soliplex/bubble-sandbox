@@ -285,6 +285,13 @@ def test_bwrapsandboxcommand_build_bwrap_command(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "xtra_vols_kwargs",
+    [
+        {},
+        {"extra_volumes": {"other": OTHER_VOLUME_RO}},
+    ],
+)
 @pytest.mark.parametrize("w_workdir", [False, True])
 @mock.patch("tempfile.TemporaryDirectory")
 @mock.patch("asyncio.create_subprocess_exec")
@@ -295,6 +302,7 @@ async def test_bwrapsandboxcommand_execute_script_w_success(
     sandbox_config,
     bare_environment,
     w_workdir,
+    xtra_vols_kwargs,
 ):
     proc = cs_exec.return_value
     proc.communicate.return_value = (b"hello\n", b"")
@@ -317,12 +325,32 @@ async def test_bwrapsandboxcommand_execute_script_w_success(
         config=sandbox_config,
     )
 
-    found = await sandbox.execute_script(script=script, **kwargs)
+    found = await sandbox.execute_script(
+        script=script,
+        **kwargs,
+        **xtra_vols_kwargs,
+    )
 
     assert isinstance(found, bs_models.ExecuteResult)
     assert found.output == "hello\n"
     assert found.exit_code == 0
     assert not found.truncated
+
+    ((args, kwargs),) = cs_exec.call_args_list
+    assert args[-2:] == (
+        "/sandbox/venv/bin/python",
+        "/sandbox/work/script.py",
+    )
+    assert kwargs == {
+        "stdout": asyncio.subprocess.PIPE,
+        "stderr": asyncio.subprocess.PIPE,
+    }
+
+    multis = _extract_multis(args)
+    if xtra_vols_kwargs:
+        exp_bind = (str(OTHER_HOST_VOLUME_PATH), "/sandbox/volumes/other")
+        ro_binds = multis["--ro-bind"]
+        assert exp_bind in ro_binds
 
 
 @pytest.mark.asyncio
@@ -450,12 +478,20 @@ async def test_bwrapsandboxcommand_execute_script_w_timeout(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "xtra_vols_kwargs",
+    [
+        {},
+        {"extra_volumes": {"other": OTHER_VOLUME_RO}},
+    ],
+)
 @mock.patch("asyncio.create_subprocess_exec")
 async def test_bwrapsandboxcommand_execute_w_success(
     cs_exec,
     tmp_path,
     sandbox_config,
     bare_environment,
+    xtra_vols_kwargs,
 ):
     proc = cs_exec.return_value
     proc.communicate.return_value = (b".  ..\n", b"")
@@ -471,7 +507,11 @@ async def test_bwrapsandboxcommand_execute_w_success(
         config=sandbox_config,
     )
 
-    found = await sandbox.execute(command=command, workdir=workdir)
+    found = await sandbox.execute(
+        command=command,
+        workdir=workdir,
+        **xtra_vols_kwargs,
+    )
 
     assert isinstance(found, bs_models.ExecuteResult)
     assert found.output == ".  ..\n"
@@ -488,6 +528,12 @@ async def test_bwrapsandboxcommand_execute_w_success(
         "stdout": asyncio.subprocess.PIPE,
         "stderr": asyncio.subprocess.PIPE,
     }
+
+    multis = _extract_multis(args)
+    if xtra_vols_kwargs:
+        exp_bind = (str(OTHER_HOST_VOLUME_PATH), "/sandbox/volumes/other")
+        ro_binds = multis["--ro-bind"]
+        assert exp_bind in ro_binds
 
 
 @pytest.mark.asyncio

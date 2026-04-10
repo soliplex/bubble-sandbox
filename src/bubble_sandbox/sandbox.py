@@ -212,6 +212,7 @@ class BwrapSandbox:
         environment_name: str = None,
         workdir: pathlib.Path | str = None,
         timeout: float = None,  # seconds
+        extra_volumes: bs_models.VolumeMap = None,
     ) -> bs_models.ExecuteResult:
 
         if workdir is None:
@@ -235,6 +236,7 @@ class BwrapSandbox:
                 environment_name=environment_name,
                 workdir=workdir_path,
                 timeout=timeout,
+                extra_volumes=extra_volumes,
             )
 
     async def execute(
@@ -244,6 +246,7 @@ class BwrapSandbox:
         environment_name: str = None,
         workdir: pathlib.Path | None = None,
         timeout: float = None,  # seconds
+        extra_volumes: bs_models.VolumeMap = None,
     ) -> bs_models.ExecuteResult:
 
         if timeout is None:
@@ -253,6 +256,7 @@ class BwrapSandbox:
             command=command,
             workdir_path=workdir,
             environment_name=environment_name,
+            extra_volumes=extra_volumes,
         )
 
         proc = await asyncio.create_subprocess_exec(
