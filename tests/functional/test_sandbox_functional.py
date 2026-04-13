@@ -3,14 +3,14 @@ from bubble_sandbox import sandbox as bs_sandbox
 
 
 async def test_bwrapsandboxcommand_execute_script_wo_workdir(
-    sandbox_settings,
+    sandbox_config,
     bare_environment,
 ):
     script = r"import sys; print('\n'.join(sys.path))"
 
     sandbox = bs_sandbox.BwrapSandbox(
         default_environment_name="bare",
-        settings=sandbox_settings,
+        config=sandbox_config,
     )
 
     found = await sandbox.execute_script(script=script)
@@ -22,7 +22,7 @@ async def test_bwrapsandboxcommand_execute_script_wo_workdir(
 
 async def test_bwrapsandboxcommand_execute_script_w_workdir(
     tmp_path,
-    sandbox_settings,
+    sandbox_config,
     bare_environment,
 ):
     workdir = tmp_path / "work"
@@ -32,7 +32,7 @@ async def test_bwrapsandboxcommand_execute_script_w_workdir(
 
     sandbox = bs_sandbox.BwrapSandbox(
         default_environment_name="bare",
-        settings=sandbox_settings,
+        config=sandbox_config,
     )
 
     found = await sandbox.execute_script(script=script, workdir=workdir)
@@ -43,15 +43,15 @@ async def test_bwrapsandboxcommand_execute_script_w_workdir(
 
 
 async def test_bwrapsandboxcommand_execute_script_w_truncation(
-    sandbox_settings,
+    sandbox_config,
     bare_environment,
 ):
-    sandbox_settings.max_output_chars = 10
+    sandbox_config.max_output_chars = 10
     script = "print('X' * 50)"
 
     sandbox = bs_sandbox.BwrapSandbox(
         default_environment_name="bare",
-        settings=sandbox_settings,
+        config=sandbox_config,
     )
 
     found = await sandbox.execute_script(script=script)
@@ -62,14 +62,14 @@ async def test_bwrapsandboxcommand_execute_script_w_truncation(
 
 
 async def test_bwrapsandboxcommand_execute_command_wo_workdir(
-    sandbox_settings,
+    sandbox_config,
     bare_environment,
 ):
     command = ["ls", "-a", "/sandbox"]
 
     sandbox = bs_sandbox.BwrapSandbox(
         default_environment_name="bare",
-        settings=sandbox_settings,
+        config=sandbox_config,
     )
 
     found = await sandbox.execute(command=command)
@@ -85,7 +85,7 @@ async def test_bwrapsandboxcommand_execute_command_wo_workdir(
 
 async def test_bwrapsandboxcommand_execute_command_w_workdir(
     tmp_path,
-    sandbox_settings,
+    sandbox_config,
     bare_environment,
 ):
     workdir = tmp_path / "work"
@@ -95,7 +95,7 @@ async def test_bwrapsandboxcommand_execute_command_w_workdir(
 
     sandbox = bs_sandbox.BwrapSandbox(
         default_environment_name="bare",
-        settings=sandbox_settings,
+        config=sandbox_config,
     )
 
     found = await sandbox.execute(command=command, workdir=workdir)
