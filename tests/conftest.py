@@ -7,9 +7,14 @@ from bubble_sandbox import config as bs_config
 
 
 @pytest.fixture
-def sandbox_config(tmp_path: pathlib.Path) -> bs_config.Config:
-    environments_path = tmp_path / "environments"
-    environments_path.mkdir()
+def environments_path(tmp_path):
+    result = tmp_path / "environments"
+    result.mkdir()
+    return result
+
+
+@pytest.fixture
+def sandbox_config(tmp_path) -> bs_config.Config:
     config_file_path = tmp_path / "config.yaml"
 
     return bs_config.Config(

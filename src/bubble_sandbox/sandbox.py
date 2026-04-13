@@ -10,61 +10,7 @@ from bubble_sandbox import models as bs_models
 
 _SYS_BASE_PREFIX = sys.base_prefix
 
-_VENV_PYTHON = (
-    pathlib.PurePosixPath("bin", "python")
-    if sys.platform != "win32"
-    else pathlib.PureWindowsPath("Scripts", "python.exe")
-)
-
 _MAX_OUTPUT_CHARS = 100_000
-
-
-class InvalidEnvironmenName(ValueError):
-    def __init__(self, env_name: str):
-        self.env_name = env_name
-        super().__init__(f"Invalid environment name: {env_name!r}")
-
-
-class EnvironmentNotFound(FileNotFoundError):
-    def __init__(self, env_name: str):
-        self.env_name = env_name
-        super().__init__(f"Environment not found: {env_name!r}")
-
-
-class EnvironmentNotInitialized(FileNotFoundError):
-    def __init__(self, env_name: str, venv_python: pathlib.Path):
-        self.env_name = env_name
-        self.venv_python = venv_python
-        super().__init__(
-            f"No venv found for environment {env_name!r}: "
-            f"(expected {venv_python})"
-        )
-
-
-def resolve_venv_path(
-    environment_name: str,
-    config: bs_config.Config,
-) -> pathlib.Path:
-    """Return the path to an environment's virtualenv"""
-
-    if (
-        "/" in environment_name
-        or "\\" in environment_name
-        or ".." in environment_name
-    ):
-        raise InvalidEnvironmenName(environment_name)
-
-    environment_path = config.environments_path / environment_name
-
-    if not environment_path.is_dir():
-        raise EnvironmentNotFound(environment_path)
-
-    venv_python = environment_path / ".venv" / _VENV_PYTHON
-
-    if not venv_python.exists():
-        raise EnvironmentNotInitialized(environment_name, venv_python)
-
-    return environment_path / ".venv"
 
 
 def core_sandbox_args(network: bool = False) -> list[str]:
@@ -130,7 +76,7 @@ def venv_sandbox_args(
     config: bs_config.Config,
 ) -> list[str]:
     """Return added 'bwrap' args based on the given sandbox environment"""
-    venv_path = resolve_venv_path(env_name, config)
+    venv_path = config.resolve_venv_path(env_name)
 
     return [
         "--ro-bind",
