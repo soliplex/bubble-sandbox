@@ -1,7 +1,10 @@
 import functools
 import pathlib
+import tomllib
 
 import pydantic_settings
+
+from bubble_sandbox import models
 
 DEFAULT_ENVIRONMENTS_PATHNAME = "environments"
 DEFAULT_EXECUTION_TIMEOUT_SECS = 30
@@ -26,6 +29,28 @@ class Config(pydantic_settings.BaseSettings):
             anchor = pathlib.Path.cwd()
 
         return anchor / self.environments_pathname
+
+    def list_environments(self) -> list[models.EnvironmentInfo]:
+        environments = []
+        root = self.environments_path
+
+        for subpath in sorted(root.glob("*")):
+            if (subpath / ".venv").is_dir():
+                toml_path = subpath / "pyproject.toml"
+
+                if toml_path.is_file():
+                    toml_text = toml_path.read_text()
+                    toml = tomllib.loads(toml_text)
+                    project = toml["project"]
+                    environments.append(
+                        models.EnvironmentInfo(
+                            name=project["name"],
+                            description=project.get("description", ""),
+                            dependencies=project.get("dependencies", []),
+                        )
+                    )
+
+        return environments
 
 
 @functools.lru_cache

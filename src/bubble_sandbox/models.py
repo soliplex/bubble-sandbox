@@ -3,6 +3,12 @@ import pathlib
 import pydantic
 
 
+class EnvironmentInfo(pydantic.BaseModel):
+    name: str
+    description: str
+    dependencies: list[str] = []
+
+
 class VolumeInfo(pydantic.BaseModel):
     host_path: pathlib.Path
     writable: bool
