@@ -3,6 +3,7 @@ from unittest import mock
 import pytest
 
 from bubble_sandbox import config as bs_config
+from bubble_sandbox import models as bs_models
 
 
 @pytest.fixture
@@ -59,6 +60,76 @@ def test_config_environments_path_w_config_file_path(tmp_path):
     found = s.environments_path
 
     assert found == tmp_path / "testing" / "path"
+
+
+@pytest.mark.parametrize(
+    "w_env_names, w_exists, w_has_toml, w_has_venv, expected",
+    [
+        ([], [], [], [], []),
+        (["nonesuch"], [False], [False], [False], []),
+        (["empty"], [True], [False], [False], []),
+        (["no_venv"], [True], [True], [False], []),
+        (["no_toml"], [True], [False], [True], []),
+        (
+            ["valid"],
+            [True],
+            [True],
+            [True],
+            [
+                {
+                    "name": "valid",
+                    "description": "Describe valid",
+                    "dependencies": ["some-dep"],
+                },
+            ],
+        ),
+    ],
+)
+async def test_config_list_environments(
+    tmp_path,
+    w_env_names,
+    w_exists,
+    w_has_toml,
+    w_has_venv,
+    expected,
+):
+    s = bs_config.Config()
+
+    for env_name, exists, has_toml, has_venv in zip(
+        w_env_names,
+        w_exists,
+        w_has_toml,
+        w_has_venv,
+        strict=True,
+    ):
+        env_subdir = tmp_path / "environments" / env_name
+        if exists:
+            env_subdir.mkdir(parents=True)
+
+            if has_toml:
+                toml = "\n".join(
+                    [
+                        "[project]",
+                        f'name = "{env_name}"',
+                        f'description = "Describe {env_name}"',
+                        'dependencies = ["some-dep"]',
+                    ]
+                )
+                toml_file = env_subdir / "pyproject.toml"
+                toml_file.write_text(toml)
+
+            if has_venv:
+                venv_dir = env_subdir / ".venv"
+                venv_dir.mkdir()
+
+    with mock.patch("pathlib.Path.cwd") as cwd:
+        cwd.return_value = tmp_path
+
+        found = s.list_environments()
+
+    assert found == [
+        bs_models.EnvironmentInfo.model_validate(entry) for entry in expected
+    ]
 
 
 def test_get_config_caching(clean_os_env):
