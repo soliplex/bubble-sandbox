@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import pathlib
+import sys
 from unittest import mock
 
 import pytest
@@ -26,36 +27,6 @@ OTHER_VOLUME_RO = bs_models.VolumeInfo(
     host_path=OTHER_HOST_VOLUME_PATH,
     writable=False,
 )
-
-
-@pytest.mark.parametrize(
-    "name",
-    ["../etc", "foo/bar", "foo\\bar", ".."],
-)
-def test_resolve_venv_path_w_path_traversal_rejected(sandbox_config, name):
-    with pytest.raises(bs_sandbox.InvalidEnvironmenName):
-        bs_sandbox.resolve_venv_path(name, sandbox_config)
-
-
-def test_resolve_venv_path_w_missing_env_dir(sandbox_config):
-    with pytest.raises(bs_sandbox.EnvironmentNotFound):
-        bs_sandbox.resolve_venv_path("nonexistent", sandbox_config)
-
-
-def test_resolve_venv_path_w_missing_venv(sandbox_config):
-    environment_path = sandbox_config.environments_path / "no-venv"
-    environment_path.mkdir()
-
-    with pytest.raises(bs_sandbox.EnvironmentNotInitialized):
-        bs_sandbox.resolve_venv_path("no-venv", sandbox_config)
-
-
-def test_resolve_venv_path_w_valid_env(sandbox_config, bare_environment):
-    expected = bare_environment / ".venv"
-
-    found = bs_sandbox.resolve_venv_path("bare", sandbox_config)
-
-    assert found == expected
 
 
 def _extract_multis(cmd):
@@ -151,10 +122,18 @@ def test_core_sandbox_args(
         assert "--unshare-net" not in rest
 
 
-@mock.patch("bubble_sandbox.sandbox.resolve_venv_path")
-def test_venv_sandbox_args(rvp, sandbox_config):
-    venv_path = sandbox_config.environments_path / ENVIRONMENT_NAME
-    rvp.return_value = venv_path
+def test_venv_sandbox_args(sandbox_config, environments_path):
+    venv_path = environments_path / ENVIRONMENT_NAME / ".venv"
+
+    if sys.platform != "win32":  # pragma: NO COVER
+        bin_path = venv_path / "bin"
+        python_interpreter = bin_path / "python"
+    else:  # pragma: NO COVER
+        bin_path = venv_path / "Scripts"
+        python_interpreter = bin_path / "python.exe"
+
+    bin_path.mkdir(parents=True)
+    python_interpreter.touch()
 
     found = bs_sandbox.venv_sandbox_args(ENVIRONMENT_NAME, sandbox_config)
 

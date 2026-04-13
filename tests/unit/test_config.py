@@ -86,7 +86,7 @@ def test_config_environments_path_w_config_file_path(tmp_path):
     ],
 )
 async def test_config_list_environments(
-    tmp_path,
+    environments_path,
     w_env_names,
     w_exists,
     w_has_toml,
@@ -102,7 +102,7 @@ async def test_config_list_environments(
         w_has_venv,
         strict=True,
     ):
-        env_subdir = tmp_path / "environments" / env_name
+        env_subdir = environments_path / env_name
         if exists:
             env_subdir.mkdir(parents=True)
 
@@ -123,13 +123,53 @@ async def test_config_list_environments(
                 venv_dir.mkdir()
 
     with mock.patch("pathlib.Path.cwd") as cwd:
-        cwd.return_value = tmp_path
+        cwd.return_value = environments_path.parent
 
         found = s.list_environments()
 
     assert found == [
         bs_models.EnvironmentInfo.model_validate(entry) for entry in expected
     ]
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["../etc", "foo/bar", "foo\\bar", ".."],
+)
+def test_config_resolve_venv_path_w_path_traversal_rejected(name):
+    s = bs_config.Config()
+
+    with pytest.raises(bs_config.InvalidEnvironmentName):
+        s.resolve_venv_path(name)
+
+
+def test_config_resolve_venv_path_w_missing_env_dir(environments_path):
+    s = bs_config.Config(environments_pathname=str(environments_path))
+
+    with pytest.raises(bs_config.EnvironmentNotFound):
+        s.resolve_venv_path("nonexistent")
+
+
+def test_config_resolve_venv_path_w_missing_venv(environments_path):
+    s = bs_config.Config(environments_pathname=str(environments_path))
+
+    environment_path = environments_path / "no-venv"
+    environment_path.mkdir()
+
+    with pytest.raises(bs_config.EnvironmentNotInitialized):
+        s.resolve_venv_path("no-venv")
+
+
+def test_config_resolve_venv_path_w_valid_env(
+    environments_path, bare_environment
+):
+    s = bs_config.Config(environments_pathname=str(environments_path))
+
+    expected = bare_environment / ".venv"
+
+    found = s.resolve_venv_path("bare")
+
+    assert found == expected
 
 
 def test_get_config_caching(clean_os_env):
