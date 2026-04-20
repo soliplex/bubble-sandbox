@@ -29,14 +29,18 @@ OTHER_VOLUME_RO = bs_models.VolumeInfo(
 )
 
 
+ONE_ARG_MULTIS = {"--proc", "--dev", "--tmpfs", "--chdir", "--perms", "--dir"}
+TWO_ARG_MULTIS = {"--bind", "--ro-bind", "--symlink", "--setenv"}
+
+
 def _extract_multis(cmd):
     binds = {}
     for i_token, token in enumerate(cmd):
-        if token in ("--bind", "--ro-bind", "--symlink", "--setenv"):
+        if token in TWO_ARG_MULTIS:
             source, target = cmd[i_token + 1], cmd[i_token + 2]
             binds.setdefault(token, []).append((source, target))
 
-        elif token in ["--proc", "--dev", "--tmpfs", "--chdir"]:
+        elif token in ONE_ARG_MULTIS:
             target = cmd[i_token + 1]
             binds.setdefault(token, []).append(target)
 
@@ -87,16 +91,35 @@ def test_core_sandbox_args(
 
     multis = _extract_multis(rest)
 
-    # Check special filesystem binds
+    # Check special filesystem binds:
     assert multis["--proc"] == ["/proc"]
     assert multis["--dev"] == ["/dev"]
     assert multis["--tmpfs"] == ["/tmp"]
 
-    # Check read-only binds
+    # Check read-only binds:
     ro_binds = multis["--ro-bind"]
     assert ("/usr", "/usr") in ro_binds
     assert ("/lib", "/lib") in ro_binds
 
+    # Check binds of elements w/ permissions:
+    w_perms = {}
+    check_perms = rest
+
+    while "--perms" in check_perms:
+        i_perm = check_perms.index("--perms")
+        mask = check_perms[i_perm + 1]
+        next_command = check_perms[i_perm + 2]
+
+        if next_command == "--dir":
+            target = check_perms[i_perm + 3]
+            w_perms.setdefault("dirs", []).append((target, mask))
+            check_perms = check_perms[i_perm + 4 :]
+        else:  # pragma: NO COVER
+            pass
+
+    assert ("/var/empty", "0644") in w_perms["dirs"]
+
+    # Only if host platform has it:
     if w_lib64:
         assert ("/lib64", "/lib64") in ro_binds
     else:
@@ -105,12 +128,12 @@ def test_core_sandbox_args(
     if exp_ro_bind is not None:
         assert exp_ro_bind in ro_binds
 
-    # Check symlinks
+    # Check symlinks:
     symlinks = multis["--symlink"]
     assert ("usr/bin", "/bin") in symlinks
     assert ("usr/sbin", "/sbin") in symlinks
 
-    # Check flags
+    # Check flags:
     assert "--unshare-user" in rest
     assert "--unshare-pid" in rest
     assert "--new-session" in rest
