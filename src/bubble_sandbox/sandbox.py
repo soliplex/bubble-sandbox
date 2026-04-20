@@ -140,6 +140,7 @@ class BwrapSandbox:
         command: list[str],
         environment_name: str = None,
         extra_volumes: bs_models.VolumeMap = None,
+        extra_args: list[str] = None,
     ) -> list[str]:
         if environment_name is None:
             environment_name = self.default_environment_name
@@ -147,11 +148,15 @@ class BwrapSandbox:
         if extra_volumes is None:
             extra_volumes = {}
 
+        if extra_args is None:
+            extra_args = []
+
         return (
             core_sandbox_args()
             + venv_sandbox_args(environment_name, self.config)
             + workdir_sandbox_args(workdir_path)
             + volumes_sandbox_args(self.volumes | extra_volumes)
+            + extra_args
             + command
         )
 
@@ -163,6 +168,7 @@ class BwrapSandbox:
         workdir: pathlib.Path | str = None,
         timeout: float = None,  # seconds
         extra_volumes: bs_models.VolumeMap = None,
+        extra_args: list[str] = None,
     ) -> bs_models.ExecuteResult:
 
         if workdir is None:
@@ -187,6 +193,7 @@ class BwrapSandbox:
                 workdir=workdir_path,
                 timeout=timeout,
                 extra_volumes=extra_volumes,
+                extra_args=extra_args,
             )
 
     async def execute(
@@ -197,6 +204,7 @@ class BwrapSandbox:
         workdir: pathlib.Path | None = None,
         timeout: float = None,  # seconds
         extra_volumes: bs_models.VolumeMap = None,
+        extra_args: list[str] = None,
     ) -> bs_models.ExecuteResult:
 
         if timeout is None:
@@ -207,6 +215,7 @@ class BwrapSandbox:
             workdir_path=workdir,
             environment_name=environment_name,
             extra_volumes=extra_volumes,
+            extra_args=extra_args,
         )
 
         proc = await asyncio.create_subprocess_exec(

@@ -29,7 +29,14 @@ OTHER_VOLUME_RO = bs_models.VolumeInfo(
 )
 
 
-ONE_ARG_MULTIS = {"--proc", "--dev", "--tmpfs", "--chdir", "--perms", "--dir"}
+ONE_ARG_MULTIS = {
+    "--proc",
+    "--dev",
+    "--tmpfs",
+    "--chdir",
+    "--perms",
+    "--dir",
+}
 TWO_ARG_MULTIS = {"--bind", "--ro-bind", "--symlink", "--setenv"}
 
 
@@ -223,6 +230,13 @@ def test_volumes_sandbox_args(volume_map, expected):
 
 
 @pytest.mark.parametrize(
+    "xtra_args_kwargs",
+    [
+        {},
+        {"extra_args": ["--foo"]},
+    ],
+)
+@pytest.mark.parametrize(
     "xtra_vols_kwargs",
     [
         {},
@@ -253,6 +267,7 @@ def test_bwrapsandboxcommand_build_bwrap_command(
     env_kwargs,
     exp_env_name,
     xtra_vols_kwargs,
+    xtra_args_kwargs,
 ):
     csa.return_value = ["CORE"]
     venvsa.return_value = ["VENV"]
@@ -268,7 +283,11 @@ def test_bwrapsandboxcommand_build_bwrap_command(
 
     workdir_path = tmp_path / "workdir"
     command = ["ls", "-laF"]
-    expected = ["CORE", "VENV", "WORKDIR", "VOLUMES"] + command
+    expected = (
+        ["CORE", "VENV", "WORKDIR", "VOLUMES"]
+        + xtra_args_kwargs.get("extra_args", [])
+        + command
+    )
     exp_xtra_vols = xtra_vols_kwargs.get("extra_volumes", {})
 
     found = sandbox.build_bwrap_command(
@@ -276,9 +295,13 @@ def test_bwrapsandboxcommand_build_bwrap_command(
         command=command,
         **env_kwargs,
         **xtra_vols_kwargs,
+        **xtra_args_kwargs,
     )
 
     assert found == expected
+
+    if xtra_args_kwargs:
+        assert "--foo" in found
 
     csa.assert_called_once_with()
     venvsa.assert_called_once_with(exp_env_name, sandbox_config)
@@ -287,6 +310,13 @@ def test_bwrapsandboxcommand_build_bwrap_command(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "xtra_args_kwargs",
+    [
+        {},
+        {"extra_args": ["--foo"]},
+    ],
+)
 @pytest.mark.parametrize(
     "xtra_vols_kwargs",
     [
@@ -305,6 +335,7 @@ async def test_bwrapsandboxcommand_execute_script_w_success(
     bare_environment,
     w_workdir,
     xtra_vols_kwargs,
+    xtra_args_kwargs,
 ):
     proc = cs_exec.return_value
     proc.communicate.return_value = (b"hello\n", b"")
@@ -331,6 +362,7 @@ async def test_bwrapsandboxcommand_execute_script_w_success(
         script=script,
         **kwargs,
         **xtra_vols_kwargs,
+        **xtra_args_kwargs,
     )
 
     assert isinstance(found, bs_models.ExecuteResult)
@@ -353,6 +385,9 @@ async def test_bwrapsandboxcommand_execute_script_w_success(
         exp_bind = (str(OTHER_HOST_VOLUME_PATH), "/sandbox/volumes/other")
         ro_binds = multis["--ro-bind"]
         assert exp_bind in ro_binds
+
+    if xtra_args_kwargs:
+        assert "--foo" in args
 
 
 @pytest.mark.asyncio
@@ -481,6 +516,13 @@ async def test_bwrapsandboxcommand_execute_script_w_timeout(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    "xtra_args_kwargs",
+    [
+        {},
+        {"extra_args": ["--foo"]},
+    ],
+)
+@pytest.mark.parametrize(
     "xtra_vols_kwargs",
     [
         {},
@@ -494,6 +536,7 @@ async def test_bwrapsandboxcommand_execute_w_success(
     sandbox_config,
     bare_environment,
     xtra_vols_kwargs,
+    xtra_args_kwargs,
 ):
     proc = cs_exec.return_value
     proc.communicate.return_value = (b".  ..\n", b"")
@@ -513,6 +556,7 @@ async def test_bwrapsandboxcommand_execute_w_success(
         command=command,
         workdir=workdir,
         **xtra_vols_kwargs,
+        **xtra_args_kwargs,
     )
 
     assert isinstance(found, bs_models.ExecuteResult)
@@ -536,6 +580,9 @@ async def test_bwrapsandboxcommand_execute_w_success(
         exp_bind = (str(OTHER_HOST_VOLUME_PATH), "/sandbox/volumes/other")
         ro_binds = multis["--ro-bind"]
         assert exp_bind in ro_binds
+
+    if xtra_args_kwargs:
+        assert "--foo" in args
 
 
 @pytest.mark.asyncio
