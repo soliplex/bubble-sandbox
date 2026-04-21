@@ -117,12 +117,20 @@ def volumes_sandbox_args(volume_map: bs_models.VolumeMap) -> list[str]:
 
     for volume_name, volume_info in volume_map.items():
         sandbox_path = f"/sandbox/volumes/{volume_name}"
-        host_path = str(volume_info.host_path)
 
-        if volume_info.writable:
-            result.extend(["--bind", host_path, sandbox_path])
-        else:
-            result.extend(["--ro-bind", host_path, sandbox_path])
+        if volume_info.host_path is None:  # create empty dir
+            if volume_info.writable:
+                result.extend(["--perms", "0755", "--dir", sandbox_path])
+            else:
+                result.extend(["--perms", "0644", "--dir", sandbox_path])
+
+        else:  # create a bind mount
+            host_path = str(volume_info.host_path)
+
+            if volume_info.writable:
+                result.extend(["--bind", host_path, sandbox_path])
+            else:
+                result.extend(["--ro-bind", host_path, sandbox_path])
 
     return result
 
