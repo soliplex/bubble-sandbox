@@ -21,6 +21,14 @@ VOLUME_RW = bs_models.VolumeInfo(
     host_path=HOST_VOLUME_PATH,
     writable=True,
 )
+EMPTY_RO = bs_models.VolumeInfo(
+    host_path=None,
+    writable=False,
+)
+EMPTY_RW = bs_models.VolumeInfo(
+    host_path=None,
+    writable=True,
+)
 
 OTHER_HOST_VOLUME_PATH = pathlib.Path("/path/to/host/other_volume")
 OTHER_VOLUME_RO = bs_models.VolumeInfo(
@@ -219,6 +227,24 @@ def test_workdir_sandbox_args_w_path(tmp_path: pathlib.Path):
                 "--bind",
                 str(HOST_VOLUME_PATH),
                 "/sandbox/volumes/readwrite",
+            ],
+        ),
+        (
+            {"empty-readonly": EMPTY_RO},
+            [
+                "--perms",
+                "0644",
+                "--dir",
+                "/sandbox/volumes/empty-readonly",
+            ],
+        ),
+        (
+            {"empty-readwrite": EMPTY_RW},
+            [
+                "--perms",
+                "0755",
+                "--dir",
+                "/sandbox/volumes/empty-readwrite",
             ],
         ),
     ],
