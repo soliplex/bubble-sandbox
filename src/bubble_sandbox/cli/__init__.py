@@ -59,7 +59,7 @@ exec_command_args = typing.Annotated[
     ),
 ]
 volume_option: list[str] = typer.Option(
-    None,
+    (),
     "-v",
     "--volume",
     help=(
@@ -126,13 +126,21 @@ def list_environments(
     the_console.line()
 
     the_config = get_the_config(config_file)
-    root = the_config.environments_path
+    for env_info in the_config.list_environments():
+        the_console.rule(env_info.name)
 
-    for subpath in sorted(root.glob("*")):
-        if (subpath / ".venv").is_dir():
-            the_console.print(f"- {subpath.name}")
+        if env_info.description:
+            the_console.print(env_info.description)
 
-    the_console.print()
+        the_console.line()
+        if env_info.dependencies:
+            the_console.print("Dependencies:")
+            for dep in env_info.dependencies:
+                the_console.print(f"- {dep}")
+        else:
+            the_console.print("No dependencies")
+
+        the_console.line()
 
 
 def make_sandbox(
@@ -143,7 +151,7 @@ def make_sandbox(
     the_config = get_the_config(config_file)
 
     return bs_sandbox.BwrapSandbox(
-        default_environment_name=environment_name,
+        default_environment_name=environment_name or "bare",
         config=the_config,
         volumes=extract_volume_map(volumes),
     )
