@@ -46,7 +46,7 @@ This package is a thin Python driver around [`bubblewrap`](https://github.com/co
 3. `workdir_sandbox_args(workdir)` — if a host workdir is given, bind-mounts it **read-write** at `/sandbox/work` and `--chdir`s into it. `execute_script` allocates a `TemporaryDirectory` workdir when none is provided and writes `script.py` into it.
 4. `volumes_sandbox_args(volume_map)` — for each `VolumeInfo`: bind-mount at `/sandbox/volumes/<name>` (rw or ro based on `writable`), or create an empty dir when `host_path` is `None`.
 
-`BwrapSandbox.execute` runs the resulting argv via `asyncio.create_subprocess_exec`, enforces `config.execution_timeout_seconds` with `asyncio.wait_for` (returns `exit_code=-1` on timeout), decodes stdout+stderr, and truncates to `config.max_output_chars`. `execute_script` is just a wrapper that writes the script to the workdir and invokes `/sandbox/venv/bin/python /sandbox/work/script.py`.
+`BwrapSandbox.execute` runs the resulting argv via `asyncio.create_subprocess_exec`, enforces `config.execution_timeout_seconds` with `asyncio.wait_for` (returns `exit_code=-1` on timeout), decodes stdout+stderr, and truncates to `config.max_output_chars`. `execute_python` is just a wrapper that writes the script to the workdir and invokes `/sandbox/venv/bin/python /sandbox/work/script.py`. `execute_script` is kept as a backward-compat alias for `execute_python`.
 
 ### Environments are separate uv projects
 
@@ -60,7 +60,7 @@ Each directory under `environments/` is its own `pyproject.toml` project with it
 
 ### CLI
 
-`src/bubble_sandbox/cli/__init__.py` is a Typer app with four commands: `list-environments`, `exec-script` (script string or file), `execute` (argv, no shell), `exec-command` (wraps argv in `sh -c`). `-a/--agent-mode` switches from Rich-decorated output to machine-parseable form (JSON for `list-environments`, raw stdout for the exec commands) — when adding new CLI output, honor this flag so agent callers get clean output.
+`src/bubble_sandbox/cli/__init__.py` is a Typer app with these commands: `list-environments`, `execute-python` (script string or file), `execute` (argv, no shell), `exec-command` (wraps argv in `sh -c`). `exec-script` is kept as a deprecated alias that forwards to `execute-python`. `-a/--agent-mode` switches from Rich-decorated output to machine-parseable form (JSON for `list-environments`, raw stdout for the exec commands) — when adding new CLI output, honor this flag so agent callers get clean output.
 
 ### Tests
 

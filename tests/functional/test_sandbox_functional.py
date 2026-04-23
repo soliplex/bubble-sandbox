@@ -2,7 +2,7 @@ from bubble_sandbox import models as bs_models
 from bubble_sandbox import sandbox as bs_sandbox
 
 
-async def test_bwrapsandboxcommand_execute_script_wo_workdir(
+async def test_bwrapsandboxcommand_execute_python_wo_workdir(
     sandbox_config,
     bare_environment,
 ):
@@ -13,14 +13,14 @@ async def test_bwrapsandboxcommand_execute_script_wo_workdir(
         config=sandbox_config,
     )
 
-    found = await sandbox.execute_script(script=script)
+    found = await sandbox.execute_python(script=script)
 
     assert isinstance(found, bs_models.ExecuteResult)
     assert found.output.startswith("/sandbox/work")
     assert not found.truncated
 
 
-async def test_bwrapsandboxcommand_execute_script_w_workdir(
+async def test_bwrapsandboxcommand_execute_python_w_workdir(
     tmp_path,
     sandbox_config,
     bare_environment,
@@ -35,14 +35,14 @@ async def test_bwrapsandboxcommand_execute_script_w_workdir(
         config=sandbox_config,
     )
 
-    found = await sandbox.execute_script(script=script, workdir=workdir)
+    found = await sandbox.execute_python(script=script, workdir=workdir)
 
     assert isinstance(found, bs_models.ExecuteResult)
     assert found.output.startswith("/sandbox/work")
     assert not found.truncated
 
 
-async def test_bwrapsandboxcommand_execute_script_w_truncation(
+async def test_bwrapsandboxcommand_execute_python_w_truncation(
     sandbox_config,
     bare_environment,
 ):
@@ -54,7 +54,7 @@ async def test_bwrapsandboxcommand_execute_script_w_truncation(
         config=sandbox_config,
     )
 
-    found = await sandbox.execute_script(script=script)
+    found = await sandbox.execute_python(script=script)
 
     assert isinstance(found, bs_models.ExecuteResult)
     assert found.output == "X" * 10

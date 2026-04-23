@@ -201,9 +201,9 @@ def print_response(
 
 
 @the_cli.command(
-    "exec-script",
+    "execute-python",
 )
-def exec_script(
+def execute_python(
     ctx: typer.Context,
     config_file: pathlib.Path = config_file_option,
     script: str | None = script_option,
@@ -213,7 +213,7 @@ def exec_script(
     volumes: list[str] = volume_option,
     agent_mode: bool = agent_mode_option,
 ):
-    """Run a script / script file in a given environment"""
+    """Run a Python script / script file in a given environment"""
     the_sandbox = make_sandbox(
         config_file=config_file,
         environment_name=environment_name,
@@ -233,14 +233,14 @@ def exec_script(
 
     if workdir is not None:
         response = asyncio.run(
-            the_sandbox.execute_script(
+            the_sandbox.execute_python(
                 script=script,
                 workdir=workdir,
             )
         )
     else:
         response = asyncio.run(
-            the_sandbox.execute_script(
+            the_sandbox.execute_python(
                 script=script,
             )
         )
@@ -249,6 +249,32 @@ def exec_script(
         print_agent_mode_response(response)
     else:
         print_response(response, the_console)
+
+
+@the_cli.command(
+    "exec-script",
+)
+def exec_script(
+    ctx: typer.Context,
+    config_file: pathlib.Path = config_file_option,
+    script: str | None = script_option,
+    script_file: pathlib.Path | None = script_file_option,
+    environment_name: str = environment_name_option,
+    workdir: pathlib.Path | None = workdir_option,
+    volumes: list[str] = volume_option,
+    agent_mode: bool = agent_mode_option,
+):
+    """Deprecated alias for 'execute-python'"""
+    execute_python(
+        ctx=ctx,
+        config_file=config_file,
+        script=script,
+        script_file=script_file,
+        environment_name=environment_name,
+        workdir=workdir,
+        volumes=volumes,
+        agent_mode=agent_mode,
+    )
 
 
 @the_cli.command(
