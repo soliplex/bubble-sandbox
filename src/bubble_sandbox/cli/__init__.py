@@ -1,6 +1,7 @@
 import asyncio
 import importlib.metadata
 import pathlib
+import sys
 import typing
 
 import rich.console
@@ -225,6 +226,9 @@ def execute_python(
     elif script_file is not None:
         str_or_file = f"@{script_file}"
         script = script_file.read_text()
+    else:
+        str_or_file = "@<stdin>"
+        script = sys.stdin.read()
 
     if not agent_mode:
         the_console.line()
