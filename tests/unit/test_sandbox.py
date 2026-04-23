@@ -353,7 +353,7 @@ def test_bwrapsandboxcommand_build_bwrap_command(
 @pytest.mark.parametrize("w_workdir", [False, True])
 @mock.patch("tempfile.TemporaryDirectory")
 @mock.patch("asyncio.create_subprocess_exec")
-async def test_bwrapsandboxcommand_execute_script_w_success(
+async def test_bwrapsandboxcommand_execute_python_w_success(
     cs_exec,
     tftd,
     tmp_path,
@@ -384,7 +384,7 @@ async def test_bwrapsandboxcommand_execute_script_w_success(
         config=sandbox_config,
     )
 
-    found = await sandbox.execute_script(
+    found = await sandbox.execute_python(
         script=script,
         **kwargs,
         **xtra_vols_kwargs,
@@ -418,7 +418,7 @@ async def test_bwrapsandboxcommand_execute_script_w_success(
 
 @pytest.mark.asyncio
 @mock.patch("asyncio.create_subprocess_exec")
-async def test_bwrapsandboxcommand_execute_script_w_truncation(
+async def test_bwrapsandboxcommand_execute_python_w_truncation(
     cs_exec,
     tmp_path,
     sandbox_config,
@@ -441,7 +441,7 @@ async def test_bwrapsandboxcommand_execute_script_w_truncation(
         config=sandbox_config,
     )
 
-    found = await sandbox.execute_script(script=script, workdir=workdir)
+    found = await sandbox.execute_python(script=script, workdir=workdir)
     exp_output = MUST_TRUNCATE[:50].decode("ascii")
 
     assert isinstance(found, bs_models.ExecuteResult)
@@ -462,7 +462,7 @@ async def test_bwrapsandboxcommand_execute_script_w_truncation(
 
 @pytest.mark.asyncio
 @mock.patch("asyncio.create_subprocess_exec")
-async def test_bwrapsandboxcommand_execute_script_w_error(
+async def test_bwrapsandboxcommand_execute_python_w_error(
     cs_exec,
     tmp_path,
     sandbox_config,
@@ -482,7 +482,7 @@ async def test_bwrapsandboxcommand_execute_script_w_error(
         config=sandbox_config,
     )
 
-    found = await sandbox.execute_script(script=script, workdir=workdir)
+    found = await sandbox.execute_python(script=script, workdir=workdir)
 
     assert isinstance(found, bs_models.ExecuteResult)
     assert found.output == "error"
@@ -492,7 +492,7 @@ async def test_bwrapsandboxcommand_execute_script_w_error(
 @pytest.mark.asyncio
 @mock.patch("asyncio.wait_for")
 @mock.patch("asyncio.create_subprocess_exec")
-async def test_bwrapsandboxcommand_execute_script_w_timeout(
+async def test_bwrapsandboxcommand_execute_python_w_timeout(
     cs_exec,
     wait_for,
     tmp_path,
@@ -519,7 +519,7 @@ async def test_bwrapsandboxcommand_execute_script_w_timeout(
         config=sandbox_config,
     )
 
-    found = await sandbox.execute_script(
+    found = await sandbox.execute_python(
         script=script,
         workdir=workdir,
         timeout=timeout_seconds,

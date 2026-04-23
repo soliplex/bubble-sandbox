@@ -168,7 +168,7 @@ class BwrapSandbox:
             + command
         )
 
-    async def execute_script(
+    async def execute_python(
         self,
         *,
         script: str,
@@ -203,6 +203,8 @@ class BwrapSandbox:
                 extra_volumes=extra_volumes,
                 extra_args=extra_args,
             )
+
+    execute_script = execute_python  # backward-compat
 
     async def execute(
         self,
