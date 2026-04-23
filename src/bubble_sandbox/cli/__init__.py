@@ -67,6 +67,15 @@ volume_option: list[str] = typer.Option(
         "'volume_name,host_path,writable' (repeatable)"
     ),
 )
+agent_mode_option: bool = typer.Option(
+    False,
+    "-a",
+    "--agent-mode",
+    help=(
+        "Write output for consumption by agents: JSON or raw response "
+        "on stdout, anything else on stderr."
+    ),
+)
 
 
 def extract_volume_map(volumes: list[str]) -> bs_models.VolumeMap:
@@ -119,28 +128,39 @@ def get_the_config(config_file: pathlib.Path | None) -> bs_config.Config:
 def list_environments(
     ctx: typer.Context,
     config_file: pathlib.Path = config_file_option,
+    agent_mode: bool = agent_mode_option,
 ):
     """List environments defined in the given path"""
-    the_console.line()
-    the_console.rule("Available environments")
-    the_console.line()
-
     the_config = get_the_config(config_file)
-    for env_info in the_config.list_environments():
-        the_console.rule(env_info.name)
 
-        if env_info.description:
-            the_console.print(env_info.description)
-
+    if agent_mode:
+        result = {
+            "environments": [
+                env_info.model_dump()
+                for env_info in the_config.list_environments()
+            ],
+        }
+        the_console.print_json(data=result)
+    else:
         the_console.line()
-        if env_info.dependencies:
-            the_console.print("Dependencies:")
-            for dep in env_info.dependencies:
-                the_console.print(f"- {dep}")
-        else:
-            the_console.print("No dependencies")
-
+        the_console.rule("Available environments")
         the_console.line()
+
+        for env_info in the_config.list_environments():
+            the_console.rule(env_info.name)
+
+            if env_info.description:
+                the_console.print(env_info.description)
+
+            the_console.line()
+            if env_info.dependencies:
+                the_console.print("Dependencies:")
+                for dep in env_info.dependencies:
+                    the_console.print(f"- {dep}")
+            else:
+                the_console.print("No dependencies")
+
+            the_console.line()
 
 
 def make_sandbox(
@@ -157,6 +177,29 @@ def make_sandbox(
     )
 
 
+def print_agent_mode_response(response: bs_models.ExecuteResult):
+    if response.exit_code:
+        print(f"Exited with code: {response.exit_code}")
+
+    print(response.output, end="")
+
+    if response.truncated:
+        print("\n<truncated>")
+
+
+def print_response(
+    response: bs_models.ExecuteResult,
+    the_console: rich.console.Console,
+):
+    if response.exit_code:
+        the_console.print(f"Exited with code: {response.exit_code}")
+
+    the_console.print(response.output, end="")
+
+    if response.truncated:
+        the_console.print("\n<truncated>")
+
+
 @the_cli.command(
     "exec-script",
 )
@@ -168,6 +211,7 @@ def exec_script(
     environment_name: str = environment_name_option,
     workdir: pathlib.Path | None = workdir_option,
     volumes: list[str] = volume_option,
+    agent_mode: bool = agent_mode_option,
 ):
     """Run a script / script file in a given environment"""
     the_sandbox = make_sandbox(
@@ -182,9 +226,10 @@ def exec_script(
         str_or_file = f"@{script_file}"
         script = script_file.read_text()
 
-    the_console.line()
-    the_console.rule(f"Running script: {str_or_file}")
-    the_console.line()
+    if not agent_mode:
+        the_console.line()
+        the_console.rule(f"Running script: {str_or_file}")
+        the_console.line()
 
     if workdir is not None:
         response = asyncio.run(
@@ -200,13 +245,10 @@ def exec_script(
             )
         )
 
-    if response.exit_code:
-        print(f"Exited with code: {response.exit_code}")
-
-    print(response.output)
-
-    if response.truncated:
-        print("<truncated>")
+    if agent_mode:
+        print_agent_mode_response(response)
+    else:
+        print_response(response, the_console)
 
 
 @the_cli.command(
@@ -219,6 +261,7 @@ def execute(
     environment_name: str = environment_name_option,
     workdir: pathlib.Path | None = workdir_option,
     volumes: list[str] = volume_option,
+    agent_mode: bool = agent_mode_option,
 ):
     """Run a command line in a given environment"""
     the_sandbox = make_sandbox(
@@ -227,9 +270,10 @@ def execute(
         volumes=volumes,
     )
 
-    the_console.line()
-    the_console.rule(f"Running command: {' '.join(command)}")
-    the_console.line()
+    if not agent_mode:
+        the_console.line()
+        the_console.rule(f"Running command: {' '.join(command)}")
+        the_console.line()
 
     if workdir is not None:
         response = asyncio.run(
@@ -245,13 +289,10 @@ def execute(
             )
         )
 
-    if response.exit_code:
-        print(f"Exited with code: {response.exit_code}")
-
-    print(response.output)
-
-    if response.truncated:
-        print("<truncated>")
+    if agent_mode:
+        print_agent_mode_response(response)
+    else:
+        print_response(response, the_console)
 
 
 @the_cli.command(
@@ -264,6 +305,7 @@ def exec_command(
     environment_name: str = environment_name_option,
     workdir: pathlib.Path | None = workdir_option,
     volumes: list[str] = volume_option,
+    agent_mode: bool = agent_mode_option,
 ):
     """Run a shell command in a given environment"""
     the_sandbox = make_sandbox(
@@ -272,9 +314,10 @@ def exec_command(
         volumes=volumes,
     )
 
-    the_console.line()
-    the_console.rule(f"Running shell command: {command}")
-    the_console.line()
+    if not agent_mode:
+        the_console.line()
+        the_console.rule(f"Running shell command: {command}")
+        the_console.line()
 
     command = ["sh", "-c", command]
 
@@ -292,10 +335,7 @@ def exec_command(
             )
         )
 
-    if response.exit_code:
-        print(f"Exited with code: {response.exit_code}")
-
-    print(response.output)
-
-    if response.truncated:
-        print("<truncated>")
+    if agent_mode:
+        print_agent_mode_response(response)
+    else:
+        print_response(response, the_console)
