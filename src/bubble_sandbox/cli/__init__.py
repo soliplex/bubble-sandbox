@@ -172,7 +172,7 @@ def make_sandbox(
     the_config = get_the_config(config_file)
 
     return bs_sandbox.BwrapSandbox(
-        default_environment_name=environment_name or "bare",
+        default_environment=environment_name or "bare",
         config=the_config,
         volumes=extract_volume_map(volumes),
     )

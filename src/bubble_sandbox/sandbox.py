@@ -137,7 +137,7 @@ def volumes_sandbox_args(volume_map: bs_models.VolumeMap) -> list[str]:
 
 @dataclasses.dataclass(kw_only=True)
 class BwrapSandbox:
-    default_environment_name: str
+    default_environment: str
     config: bs_config.Config
     volumes: bs_models.VolumeMap = dataclasses.field(default_factory=dict)
 
@@ -151,7 +151,7 @@ class BwrapSandbox:
         extra_args: list[str] = None,
     ) -> list[str]:
         if environment_name is None:
-            environment_name = self.default_environment_name
+            environment_name = self.default_environment
 
         if extra_volumes is None:
             extra_volumes = {}

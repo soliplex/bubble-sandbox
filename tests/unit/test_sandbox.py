@@ -302,7 +302,7 @@ def test_bwrapsandboxcommand_build_bwrap_command(
 
     volumes = {"readonly": VOLUME_RO}
     sandbox = bs_sandbox.BwrapSandbox(
-        default_environment_name=ENVIRONMENT_NAME,
+        default_environment=ENVIRONMENT_NAME,
         config=sandbox_config,
         volumes=volumes,
     )
@@ -380,7 +380,7 @@ async def test_bwrapsandboxcommand_execute_python_w_success(
         tftd.return_value = contextlib.nullcontext(temp_dir)
 
     sandbox = bs_sandbox.BwrapSandbox(
-        default_environment_name="bare",
+        default_environment="bare",
         config=sandbox_config,
     )
 
@@ -437,7 +437,7 @@ async def test_bwrapsandboxcommand_execute_python_w_truncation(
     workdir.mkdir()
 
     sandbox = bs_sandbox.BwrapSandbox(
-        default_environment_name="bare",
+        default_environment="bare",
         config=sandbox_config,
     )
 
@@ -478,7 +478,7 @@ async def test_bwrapsandboxcommand_execute_python_w_error(
     workdir.mkdir()
 
     sandbox = bs_sandbox.BwrapSandbox(
-        default_environment_name="bare",
+        default_environment="bare",
         config=sandbox_config,
     )
 
@@ -515,7 +515,7 @@ async def test_bwrapsandboxcommand_execute_python_w_timeout(
     workdir.mkdir()
 
     sandbox = bs_sandbox.BwrapSandbox(
-        default_environment_name="bare",
+        default_environment="bare",
         config=sandbox_config,
     )
 
@@ -574,7 +574,7 @@ async def test_bwrapsandboxcommand_execute_w_success(
     command = ["ls", "-a", "/sandbox/work"]
 
     sandbox = bs_sandbox.BwrapSandbox(
-        default_environment_name="bare",
+        default_environment="bare",
         config=sandbox_config,
     )
 
@@ -629,7 +629,7 @@ async def test_bwrapsandboxcommand_execute_wo_workdir(
     command = ["python", "-c", "print('hello')"]
 
     sandbox = bs_sandbox.BwrapSandbox(
-        default_environment_name="bare",
+        default_environment="bare",
         config=sandbox_config,
     )
 
@@ -663,7 +663,7 @@ async def test_bwrapsandboxcommand_execute_w_truncation(
     workdir.mkdir()
 
     sandbox = bs_sandbox.BwrapSandbox(
-        default_environment_name="bare",
+        default_environment="bare",
         config=sandbox_config,
     )
 
@@ -695,7 +695,7 @@ async def test_bwrapsandboxcommand_execute_w_error(
     workdir.mkdir()
 
     sandbox = bs_sandbox.BwrapSandbox(
-        default_environment_name="bare",
+        default_environment="bare",
         config=sandbox_config,
     )
 
@@ -733,7 +733,7 @@ async def test_bwrapsandboxcommand_execute_w_timeout(
     workdir.mkdir()
 
     sandbox = bs_sandbox.BwrapSandbox(
-        default_environment_name="bare",
+        default_environment="bare",
         config=sandbox_config,
     )
 

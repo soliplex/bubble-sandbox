@@ -9,7 +9,7 @@ async def test_bwrapsandboxcommand_execute_python_wo_workdir(
     script = r"import sys; print('\n'.join(sys.path))"
 
     sandbox = bs_sandbox.BwrapSandbox(
-        default_environment_name="bare",
+        default_environment="bare",
         config=sandbox_config,
     )
 
@@ -31,7 +31,7 @@ async def test_bwrapsandboxcommand_execute_python_w_workdir(
     script = r"import sys; print('\n'.join(sys.path))"
 
     sandbox = bs_sandbox.BwrapSandbox(
-        default_environment_name="bare",
+        default_environment="bare",
         config=sandbox_config,
     )
 
@@ -50,7 +50,7 @@ async def test_bwrapsandboxcommand_execute_python_w_truncation(
     script = "print('X' * 50)"
 
     sandbox = bs_sandbox.BwrapSandbox(
-        default_environment_name="bare",
+        default_environment="bare",
         config=sandbox_config,
     )
 
@@ -68,7 +68,7 @@ async def test_bwrapsandboxcommand_execute_command_wo_workdir(
     command = ["ls", "-a", "/sandbox"]
 
     sandbox = bs_sandbox.BwrapSandbox(
-        default_environment_name="bare",
+        default_environment="bare",
         config=sandbox_config,
     )
 
@@ -94,7 +94,7 @@ async def test_bwrapsandboxcommand_execute_command_w_workdir(
     command = ["ls", "-a", "/sandbox"]
 
     sandbox = bs_sandbox.BwrapSandbox(
-        default_environment_name="bare",
+        default_environment="bare",
         config=sandbox_config,
     )
 
