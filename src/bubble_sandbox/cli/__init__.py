@@ -255,30 +255,8 @@ def execute_python(
         print_response(response, the_console)
 
 
-@the_cli.command(
-    "exec-script",
-)
-def exec_script(
-    ctx: typer.Context,
-    config_file: pathlib.Path = config_file_option,
-    script: str | None = script_option,
-    script_file: pathlib.Path | None = script_file_option,
-    environment_name: str = environment_name_option,
-    workdir: pathlib.Path | None = workdir_option,
-    volumes: list[str] = volume_option,
-    agent_mode: bool = agent_mode_option,
-):
-    """Deprecated alias for 'execute-python'"""
-    execute_python(
-        ctx=ctx,
-        config_file=config_file,
-        script=script,
-        script_file=script_file,
-        environment_name=environment_name,
-        workdir=workdir,
-        volumes=volumes,
-        agent_mode=agent_mode,
-    )
+# Leave 'exec-script' behind as a hidden backward-compat alias
+the_cli.command(name="exec-script", hidden=True)(execute_python)
 
 
 @the_cli.command(
