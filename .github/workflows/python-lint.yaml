@@ -44,7 +44,32 @@ jobs:
           pip install -e . --group dev
 
       - name: Check formatting
-        run: ruff format --check
+        run: |
+          set -o pipefail
+          ruff format --check 2>&1 | tee ruff-format.log
 
       - name: Run ruff linter
-        run: ruff check
+        run: |
+          set -o pipefail
+          ruff check 2>&1 | tee ruff-check.log
+
+      # Slack notification lives in 'ci-failure-notify.yaml', which only
+      # links to this run (see #25), so record what failed here.
+      - name: Summarize failures
+        if: failure()
+        run: |
+          {
+            echo "## Linting failed"
+            echo
+            for log in ruff-format.log ruff-check.log; do
+              [ -f "$log" ] || continue
+              echo "<details><summary>$log</summary>"
+              echo
+              echo '```'
+              tail -n 100 "$log"
+              echo '```'
+              echo
+              echo "</details>"
+              echo
+            done
+          } >> "$GITHUB_STEP_SUMMARY"

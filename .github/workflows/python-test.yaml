@@ -65,5 +65,27 @@ jobs:
 
       - name: Run unit tests with coverage
         run: |
+          set -o pipefail
           pip list
-          py.test -s ${{ matrix.pytest-args }}
+          py.test -s ${{ matrix.pytest-args }} 2>&1 | tee unit-tests.log
+
+      # Slack notification lives in 'ci-failure-notify.yaml', which only
+      # links to this run (see #25), so record what failed here.
+      - name: Summarize failures
+        if: failure()
+        run: |
+          {
+            echo "## Python ${{ matrix.python-version }} failed"
+            echo
+            for log in unit-tests.log; do
+              [ -f "$log" ] || continue
+              echo "<details><summary>$log (last 50 lines)</summary>"
+              echo
+              echo '```'
+              tail -n 50 "$log"
+              echo '```'
+              echo
+              echo "</details>"
+              echo
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
