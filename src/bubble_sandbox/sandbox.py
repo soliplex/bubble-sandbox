@@ -30,6 +30,12 @@ def core_sandbox_args(network: bool = False) -> list[str]:
         "--ro-bind",
         "/lib",
         "/lib",
+        "--ro-bind",
+        "/var/lib",
+        "/var/lib",
+        "--ro-bind",
+        "/usr/share",
+        "/usr/share",
     ]
 
     if pathlib.Path("/lib64").exists():
