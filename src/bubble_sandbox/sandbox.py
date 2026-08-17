@@ -12,6 +12,25 @@ _SYS_BASE_PREFIX = sys.base_prefix
 
 _MAX_OUTPUT_CHARS = 100_000
 
+# Host paths bound into the sandbox *only* when networking is enabled.
+# 'core_sandbox_args' binds no '/etc' at all, so without these a sandbox
+# with a shared network namespace can still only reach IP literals: glibc
+# has no resolver configuration and OpenSSL has no trust store.
+#
+# Bound individually rather than as whole directories: a read-only bind of
+# '/etc' would expose unrelated host configuration, and one of '/etc/ssl'
+# would map '/etc/ssl/private' into the sandbox.
+_NETWORK_PATHS = (
+    "/etc/resolv.conf",  # nameserver addresses
+    "/etc/hosts",  # static host table
+    "/etc/nsswitch.conf",  # tells glibc to consult DNS at all
+    "/etc/host.conf",
+    "/etc/gai.conf",  # getaddrinfo address ordering
+    "/etc/ssl/certs",  # CA trust store (Debian, Ubuntu, Alpine)
+    "/etc/ssl/openssl.cnf",
+    "/etc/pki/tls/certs",  # CA trust store (RHEL, Fedora, SUSE)
+)
+
 
 def core_sandbox_args(network: bool = False) -> list[str]:
     """Return 'bwrap' and arguments which are always present
@@ -77,6 +96,30 @@ def core_sandbox_args(network: bool = False) -> list[str]:
 
     if not network:
         result.append("--unshare-net")
+
+    return result
+
+
+def network_sandbox_args(network: bool = False) -> list[str]:
+    """Return added 'bwrap' args needed to make networking usable
+
+    Returns an empty list unless 'network' is true: with the network
+    namespace unshared there is nothing for these files to configure.
+
+    Each path is bound with '--ro-bind-try' rather than '--ro-bind', since
+    which of them exist varies by distribution and a missing source would
+    make 'bwrap' fail outright.
+
+    Args:
+      'network' (boolean): if True, bind the resolver / trust-store paths
+    """
+    if not network:
+        return []
+
+    result = []
+
+    for host_path in _NETWORK_PATHS:
+        result.extend(["--ro-bind-try", host_path, host_path])
 
     return result
 
@@ -153,11 +196,15 @@ class BwrapSandbox:
         workdir_path: pathlib.Path | None,
         command: list[str],
         environment_name: str = None,
+        network: bool = None,
         extra_volumes: bs_models.VolumeMap = None,
         extra_args: list[str] = None,
     ) -> list[str]:
         if environment_name is None:
             environment_name = self.default_environment
+
+        if network is None:
+            network = self.config.enable_network
 
         if extra_volumes is None:
             extra_volumes = {}
@@ -166,7 +213,8 @@ class BwrapSandbox:
             extra_args = []
 
         return (
-            core_sandbox_args()
+            core_sandbox_args(network=network)
+            + network_sandbox_args(network)
             + venv_sandbox_args(environment_name, self.config)
             + workdir_sandbox_args(workdir_path)
             + volumes_sandbox_args(self.volumes | extra_volumes)
@@ -181,6 +229,7 @@ class BwrapSandbox:
         environment_name: str = None,
         workdir: pathlib.Path | str = None,
         timeout: float = None,  # seconds
+        network: bool = None,
         extra_volumes: bs_models.VolumeMap = None,
         extra_args: list[str] = None,
     ) -> bs_models.ExecuteResult:
@@ -206,6 +255,7 @@ class BwrapSandbox:
                 environment_name=environment_name,
                 workdir=workdir_path,
                 timeout=timeout,
+                network=network,
                 extra_volumes=extra_volumes,
                 extra_args=extra_args,
             )
@@ -219,6 +269,7 @@ class BwrapSandbox:
         environment_name: str = None,
         workdir: pathlib.Path | None = None,
         timeout: float = None,  # seconds
+        network: bool = None,
         extra_volumes: bs_models.VolumeMap = None,
         extra_args: list[str] = None,
     ) -> bs_models.ExecuteResult:
@@ -230,6 +281,7 @@ class BwrapSandbox:
             command=command,
             workdir_path=workdir,
             environment_name=environment_name,
+            network=network,
             extra_volumes=extra_volumes,
             extra_args=extra_args,
         )

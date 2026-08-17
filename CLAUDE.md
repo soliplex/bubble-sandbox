@@ -39,12 +39,13 @@ This package is a thin Python driver around [`bubblewrap`](https://github.com/co
 
 ### Sandbox argv is composed in layers
 
-`src/bubble_sandbox/sandbox.py` builds the `bwrap` command by concatenating four independent helpers, in order:
+`src/bubble_sandbox/sandbox.py` builds the `bwrap` command by concatenating five independent helpers, in order:
 
-1. `core_sandbox_args()` — always-on flags: read-only binds of `/usr`, `/lib`, `/lib64` (if present), and `sys.base_prefix` (when not `/usr`); `/bin` and `/sbin` symlinks; fresh `/proc`, `/dev`, tmpfs `/tmp`; `--unshare-user`, `--unshare-pid`, `--unshare-net` (unless `network=True`), `--new-session`, `--die-with-parent`.
-2. `venv_sandbox_args(env_name, config)` — resolves `environments/<env_name>/.venv` and bind-mounts it read-only at `/sandbox/venv`; sets `PATH=/sandbox/venv/bin:/usr/bin:/bin`.
-3. `workdir_sandbox_args(workdir)` — if a host workdir is given, bind-mounts it **read-write** at `/sandbox/work` and `--chdir`s into it. `execute_script` allocates a `TemporaryDirectory` workdir when none is provided and writes `script.py` into it.
-4. `volumes_sandbox_args(volume_map)` — for each `VolumeInfo`: bind-mount at `/sandbox/volumes/<name>` (rw or ro based on `writable`), or create an empty dir when `host_path` is `None`.
+1. `core_sandbox_args(network)` — always-on flags: read-only binds of `/usr`, `/lib`, `/lib64` (if present), and `sys.base_prefix` (when not `/usr`); `/bin` and `/sbin` symlinks; fresh `/proc`, `/dev`, tmpfs `/tmp`; `--unshare-user`, `--unshare-pid`, `--unshare-net` (unless `network=True`), `--new-session`, `--die-with-parent`.
+2. `network_sandbox_args(network)` — empty unless `network=True`, in which case it `--ro-bind-try`s the handful of `/etc` paths in `_NETWORK_PATHS` that make a shared network namespace actually usable: resolver config (`resolv.conf`, `hosts`, `nsswitch.conf`) and CA trust stores. No other layer binds anything under `/etc`, so without this a networked sandbox can only reach IP literals — glibc has no resolver config and OpenSSL no trust store. `--ro-bind-try` (not `--ro-bind`) because which paths exist varies by distro and a missing source makes `bwrap` exit nonzero.
+3. `venv_sandbox_args(env_name, config)` — resolves `environments/<env_name>/.venv` and bind-mounts it read-only at `/sandbox/venv`; sets `PATH=/sandbox/venv/bin:/usr/bin:/bin`.
+4. `workdir_sandbox_args(workdir)` — if a host workdir is given, bind-mounts it **read-write** at `/sandbox/work` and `--chdir`s into it. `execute_script` allocates a `TemporaryDirectory` workdir when none is provided and writes `script.py` into it.
+5. `volumes_sandbox_args(volume_map)` — for each `VolumeInfo`: bind-mount at `/sandbox/volumes/<name>` (rw or ro based on `writable`), or create an empty dir when `host_path` is `None`.
 
 `BwrapSandbox.execute` runs the resulting argv via `asyncio.create_subprocess_exec`, enforces `config.execution_timeout_seconds` with `asyncio.wait_for` (returns `exit_code=-1` on timeout), decodes stdout+stderr, and truncates to `config.max_output_chars`. `execute_python` is just a wrapper that writes the script to the workdir and invokes `/sandbox/venv/bin/python /sandbox/work/script.py`. `execute_script` is kept as a backward-compat alias for `execute_python`.
 
@@ -56,7 +57,7 @@ Each directory under `environments/` is its own `pyproject.toml` project with it
 
 ### Config
 
-`Config` is a `pydantic_settings.BaseSettings` with prefix `BUBBLE_SANDBOX_` (e.g. `BUBBLE_SANDBOX_EXECUTION_TIMEOUT_SECONDS`). `get_config()` is `@functools.lru_cache`d — tests that need a fresh `Config` should construct one directly rather than calling `get_config()`. The CLI's `-c/--config` flag loads a YAML file and constructs `Config` from it, bypassing env-var loading; when set, `environments_path` is resolved relative to the config file's directory rather than CWD.
+`Config` is a `pydantic_settings.BaseSettings` with prefix `BUBBLE_SANDBOX_` (e.g. `BUBBLE_SANDBOX_EXECUTION_TIMEOUT_SECONDS`). `enable_network` (default `False`) is the global default for sandbox network access; `execute` / `execute_python` / `build_bwrap_command` take a `network: bool | None` argument that overrides it per call, resolved in `build_bwrap_command` the same way `environment_name=None` falls back to `default_environment`. Note there is deliberately no policy ceiling preventing a caller from passing `network=True` against a `False` config — `extra_args` already lets any caller inject arbitrary `bwrap` argv, so the trust boundary is "whoever constructs `BwrapSandbox`", not the flag. `get_config()` is `@functools.lru_cache`d — tests that need a fresh `Config` should construct one directly rather than calling `get_config()`. The CLI's `-c/--config` flag loads a YAML file and constructs `Config` from it, bypassing env-var loading; when set, `environments_path` is resolved relative to the config file's directory rather than CWD.
 
 ### CLI
 

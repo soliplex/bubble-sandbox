@@ -59,6 +59,14 @@ exec_command_args = typing.Annotated[
         help="Arguments to 'exec-command'",
     ),
 ]
+network_option: bool | None = typer.Option(
+    None,
+    "--network/--no-network",
+    help=(
+        "Allow / deny network access from the sandbox, overriding the "
+        "configured 'enable_network' setting (which defaults to denying)."
+    ),
+)
 volume_option: list[str] = typer.Option(
     (),
     "-v",
@@ -211,6 +219,7 @@ def execute_python(
     script_file: pathlib.Path | None = script_file_option,
     environment_name: str = environment_name_option,
     workdir: pathlib.Path | None = workdir_option,
+    network: bool | None = network_option,
     volumes: list[str] = volume_option,
     agent_mode: bool = agent_mode_option,
 ):
@@ -235,19 +244,15 @@ def execute_python(
         the_console.rule(f"Running script: {str_or_file}")
         the_console.line()
 
-    if workdir is not None:
-        response = asyncio.run(
-            the_sandbox.execute_python(
-                script=script,
-                workdir=workdir,
-            )
+    # 'workdir' / 'network' of None are the sandbox's own "unset" sentinels:
+    # a temporary work directory, and the configured network default.
+    response = asyncio.run(
+        the_sandbox.execute_python(
+            script=script,
+            workdir=workdir,
+            network=network,
         )
-    else:
-        response = asyncio.run(
-            the_sandbox.execute_python(
-                script=script,
-            )
-        )
+    )
 
     if agent_mode:
         print_agent_mode_response(response)
@@ -268,6 +273,7 @@ def execute(
     config_file: pathlib.Path = config_file_option,
     environment_name: str = environment_name_option,
     workdir: pathlib.Path | None = workdir_option,
+    network: bool | None = network_option,
     volumes: list[str] = volume_option,
     agent_mode: bool = agent_mode_option,
 ):
@@ -283,19 +289,13 @@ def execute(
         the_console.rule(f"Running command: {' '.join(command)}")
         the_console.line()
 
-    if workdir is not None:
-        response = asyncio.run(
-            the_sandbox.execute(
-                command=command,
-                workdir=workdir,
-            )
+    response = asyncio.run(
+        the_sandbox.execute(
+            command=command,
+            workdir=workdir,
+            network=network,
         )
-    else:
-        response = asyncio.run(
-            the_sandbox.execute(
-                command=command,
-            )
-        )
+    )
 
     if agent_mode:
         print_agent_mode_response(response)
@@ -312,6 +312,7 @@ def exec_command(
     config_file: pathlib.Path = config_file_option,
     environment_name: str = environment_name_option,
     workdir: pathlib.Path | None = workdir_option,
+    network: bool | None = network_option,
     volumes: list[str] = volume_option,
     agent_mode: bool = agent_mode_option,
 ):
@@ -329,19 +330,13 @@ def exec_command(
 
     command = ["sh", "-c", command]
 
-    if workdir is not None:
-        response = asyncio.run(
-            the_sandbox.execute(
-                command=command,
-                workdir=workdir,
-            )
+    response = asyncio.run(
+        the_sandbox.execute(
+            command=command,
+            workdir=workdir,
+            network=network,
         )
-    else:
-        response = asyncio.run(
-            the_sandbox.execute(
-                command=command,
-            )
-        )
+    )
 
     if agent_mode:
         print_agent_mode_response(response)

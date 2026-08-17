@@ -28,6 +28,12 @@ Do NOT use the sandbox if **any** of these is true:
 - `/sandbox/volumes/thread/` — read-only; files the user uploaded to this thread. Usually the task inputs.
 - `/sandbox/volumes/room/` — read-only; files shared across the room. Often contain rules, formulas, or reference data required for a correct answer.
 
+## Network access
+
+Assume the sandbox has **no network access**: it is disabled by default, and whether it has been enabled is a deployment setting you cannot see from here. Do not write scripts that download data, install packages, or call APIs. Work from the files in the volumes.
+
+If a task genuinely cannot be done without network access, say so and stop rather than retrying — a `URLError`, `gaierror`, or "Network is unreachable" in the output means it is switched off, not that the script needs fixing.
+
 ## Workflow
 
 **Scripts at a glance** (invoke via the `run_script` tool):

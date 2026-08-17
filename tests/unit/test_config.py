@@ -26,18 +26,22 @@ def test_config_defaults(clean_os_env):
         bs_config.DEFAULT_EXECUTION_TIMEOUT_SECS
     )
     assert s.max_output_chars == bs_config.DEFAULT_MAX_OUTPUT_CHARS
+    assert s.enable_network == bs_config.DEFAULT_ENABLE_NETWORK
+    assert not s.enable_network  # the default must deny the network
 
 
 def test_config_from_env_vars(clean_os_env):
     clean_os_env["BUBBLE_SANDBOX_ENVIRONMENTS_PATHNAME"] = "/some/path"
     clean_os_env["BUBBLE_SANDBOX_EXECUTION_TIMEOUT_SECONDS"] = "60"
     clean_os_env["BUBBLE_SANDBOX_MAX_OUTPUT_CHARS"] = "500"
+    clean_os_env["BUBBLE_SANDBOX_ENABLE_NETWORK"] = "true"
 
     s = bs_config.Config()
 
     assert s.environments_pathname == "/some/path"
     assert s.execution_timeout_seconds == 60
     assert s.max_output_chars == 500
+    assert s.enable_network
 
 
 def test_config_environments_path_wo_config_file_path(tmp_path):

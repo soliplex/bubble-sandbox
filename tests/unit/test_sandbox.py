@@ -45,7 +45,13 @@ ONE_ARG_MULTIS = {
     "--perms",
     "--dir",
 }
-TWO_ARG_MULTIS = {"--bind", "--ro-bind", "--symlink", "--setenv"}
+TWO_ARG_MULTIS = {
+    "--bind",
+    "--ro-bind",
+    "--ro-bind-try",
+    "--symlink",
+    "--setenv",
+}
 
 
 def _extract_multis(cmd):
@@ -160,6 +166,37 @@ def test_core_sandbox_args(
         assert "--unshare-net" not in rest
 
 
+@pytest.mark.parametrize(
+    "network_kwargs, has_binds",
+    [
+        ({}, False),
+        ({"network": False}, False),
+        ({"network": True}, True),
+    ],
+)
+def test_network_sandbox_args(network_kwargs, has_binds):
+    found = bs_sandbox.network_sandbox_args(**network_kwargs)
+
+    if not has_binds:
+        assert found == []
+        return
+
+    multis = _extract_multis(found)
+
+    # Every path is bound with '--ro-bind-try', not '--ro-bind': which of
+    # them exist varies by distribution.
+    assert "--ro-bind" not in found
+    try_binds = multis["--ro-bind-try"]
+
+    assert try_binds == [
+        (host_path, host_path) for host_path in bs_sandbox._NETWORK_PATHS
+    ]
+
+    # The resolver config and a trust store are the point of the exercise.
+    assert ("/etc/resolv.conf", "/etc/resolv.conf") in try_binds
+    assert ("/etc/ssl/certs", "/etc/ssl/certs") in try_binds
+
+
 def test_venv_sandbox_args(sandbox_config, environments_path):
     venv_path = environments_path / ENVIRONMENT_NAME / ".venv"
 
@@ -270,6 +307,17 @@ def test_volumes_sandbox_args(volume_map, expected):
     ],
 )
 @pytest.mark.parametrize(
+    "network_kwargs, w_enable_network, exp_network",
+    [
+        # unset: falls back to the configured default
+        ({}, False, False),
+        ({}, True, True),
+        # explicit: overrides the configured default either way
+        ({"network": False}, True, False),
+        ({"network": True}, False, True),
+    ],
+)
+@pytest.mark.parametrize(
     "env_kwargs, exp_env_name",
     [
         ({}, ENVIRONMENT_NAME),
@@ -282,9 +330,11 @@ def test_volumes_sandbox_args(volume_map, expected):
 @mock.patch("bubble_sandbox.sandbox.volumes_sandbox_args")
 @mock.patch("bubble_sandbox.sandbox.workdir_sandbox_args")
 @mock.patch("bubble_sandbox.sandbox.venv_sandbox_args")
+@mock.patch("bubble_sandbox.sandbox.network_sandbox_args")
 @mock.patch("bubble_sandbox.sandbox.core_sandbox_args")
 def test_bwrapsandboxcommand_build_bwrap_command(
     csa,
+    netsa,
     venvsa,
     wdsa,
     volsa,
@@ -292,13 +342,19 @@ def test_bwrapsandboxcommand_build_bwrap_command(
     sandbox_config,
     env_kwargs,
     exp_env_name,
+    network_kwargs,
+    w_enable_network,
+    exp_network,
     xtra_vols_kwargs,
     xtra_args_kwargs,
 ):
     csa.return_value = ["CORE"]
+    netsa.return_value = ["NETWORK"]
     venvsa.return_value = ["VENV"]
     wdsa.return_value = ["WORKDIR"]
     volsa.return_value = ["VOLUMES"]
+
+    sandbox_config.enable_network = w_enable_network
 
     volumes = {"readonly": VOLUME_RO}
     sandbox = bs_sandbox.BwrapSandbox(
@@ -310,7 +366,7 @@ def test_bwrapsandboxcommand_build_bwrap_command(
     workdir_path = tmp_path / "workdir"
     command = ["ls", "-laF"]
     expected = (
-        ["CORE", "VENV", "WORKDIR", "VOLUMES"]
+        ["CORE", "NETWORK", "VENV", "WORKDIR", "VOLUMES"]
         + xtra_args_kwargs.get("extra_args", [])
         + command
     )
@@ -320,6 +376,7 @@ def test_bwrapsandboxcommand_build_bwrap_command(
         workdir_path=workdir_path,
         command=command,
         **env_kwargs,
+        **network_kwargs,
         **xtra_vols_kwargs,
         **xtra_args_kwargs,
     )
@@ -329,7 +386,8 @@ def test_bwrapsandboxcommand_build_bwrap_command(
     if xtra_args_kwargs:
         assert "--foo" in found
 
-    csa.assert_called_once_with()
+    csa.assert_called_once_with(network=exp_network)
+    netsa.assert_called_once_with(exp_network)
     venvsa.assert_called_once_with(exp_env_name, sandbox_config)
     wdsa.assert_called_once_with(workdir_path)
     volsa.assert_called_once_with(volumes | exp_xtra_vols)
@@ -609,6 +667,59 @@ async def test_bwrapsandboxcommand_execute_w_success(
 
     if xtra_args_kwargs:
         assert "--foo" in args
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "network_kwargs, w_enable_network, exp_network",
+    [
+        ({}, False, False),
+        ({}, True, True),
+        ({"network": False}, True, False),
+        ({"network": True}, False, True),
+    ],
+)
+@mock.patch("asyncio.create_subprocess_exec")
+async def test_bwrapsandboxcommand_execute_w_network(
+    cs_exec,
+    tmp_path,
+    sandbox_config,
+    bare_environment,
+    network_kwargs,
+    w_enable_network,
+    exp_network,
+):
+    """Check the whole argv, unmocked, for both network settings"""
+    proc = cs_exec.return_value
+    proc.communicate.return_value = (b"", b"")
+    proc.returncode = 0
+
+    sandbox_config.enable_network = w_enable_network
+
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment="bare",
+        config=sandbox_config,
+    )
+
+    await sandbox.execute(
+        command=["true"],
+        workdir=workdir,
+        **network_kwargs,
+    )
+
+    ((args, _kwargs),) = cs_exec.call_args_list
+    multis = _extract_multis(args)
+    resolv_conf = ("/etc/resolv.conf", "/etc/resolv.conf")
+
+    if exp_network:
+        assert "--unshare-net" not in args
+        assert resolv_conf in multis["--ro-bind-try"]
+    else:
+        assert "--unshare-net" in args
+        assert "--ro-bind-try" not in multis
 
 
 @pytest.mark.asyncio

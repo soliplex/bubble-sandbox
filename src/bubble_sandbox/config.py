@@ -10,6 +10,7 @@ from bubble_sandbox import models
 DEFAULT_ENVIRONMENTS_PATHNAME = "environments"
 DEFAULT_EXECUTION_TIMEOUT_SECS = 30
 DEFAULT_MAX_OUTPUT_CHARS = 100_000
+DEFAULT_ENABLE_NETWORK = False
 
 _VENV_PYTHON = (
     pathlib.PurePosixPath("bin", "python")
@@ -49,6 +50,12 @@ class Config(pydantic_settings.BaseSettings):
     environments_pathname: str = DEFAULT_ENVIRONMENTS_PATHNAME
     execution_timeout_seconds: float = DEFAULT_EXECUTION_TIMEOUT_SECS
     max_output_chars: int = DEFAULT_MAX_OUTPUT_CHARS
+
+    # Default for the sandbox network namespace: when false (the default)
+    # the sandbox gets '--unshare-net' and has no network at all. Callers
+    # may override per execution via the 'network' argument to 'execute' /
+    # 'execute_python'.
+    enable_network: bool = DEFAULT_ENABLE_NETWORK
 
     @property
     def environments_path(self) -> pathlib.Path:

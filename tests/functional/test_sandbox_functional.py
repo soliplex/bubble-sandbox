@@ -108,3 +108,62 @@ async def test_bwrapsandboxcommand_execute_command_w_workdir(
         "work",
     ]
     assert not found.truncated
+
+
+async def test_bwrapsandboxcommand_execute_wo_network(
+    sandbox_config,
+    bare_environment,
+):
+    """Without the network there is no route to anything, even a literal"""
+    script = "\n".join(
+        [
+            "import socket",
+            "try:",
+            "    socket.create_connection(('1.1.1.1', 53), timeout=5)",
+            "except OSError as exc:",
+            "    print(f'FAILED: {type(exc).__name__}')",
+            "else:",
+            "    print('CONNECTED')",
+        ]
+    )
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment="bare",
+        config=sandbox_config,
+    )
+
+    found = await sandbox.execute_python(script=script)
+
+    assert found.exit_code == 0
+    assert found.output.startswith("FAILED:")
+
+
+async def test_bwrapsandboxcommand_execute_w_network_mounts_resolver(
+    sandbox_config,
+    bare_environment,
+):
+    """With the network enabled, the resolver config is visible
+
+    Asserts on the mounts rather than on reaching a remote host, so the
+    test does not depend on egress from wherever it runs.
+    """
+    script = "\n".join(
+        [
+            "import pathlib",
+            "for name in ('/etc/resolv.conf', '/etc/hosts'):",
+            "    print(name, pathlib.Path(name).is_file())",
+        ]
+    )
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment="bare",
+        config=sandbox_config,
+    )
+
+    found = await sandbox.execute_python(script=script, network=True)
+
+    assert found.exit_code == 0
+    assert found.output.splitlines() == [
+        "/etc/resolv.conf True",
+        "/etc/hosts True",
+    ]

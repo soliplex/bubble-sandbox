@@ -5,7 +5,7 @@ A Python-specific driver for configuring
 specified Python virtual environment, controlling which packages are available.
 
 Each execution runs in a disposable sandbox with the following constraints:
-- no network access
+- no network access (unless explicitly enabled; see [Configuration](#configuration))
 - PID isolation
 - read-only filesystem (unless host directories are mounted `read-write`)
 
@@ -126,19 +126,59 @@ one of its own arguments.
 
 ## Configuration
 
-All settings are configured via environment variables with the `BUBBLE_SANDBOX_` prefix:
+Settings are read from environment variables with the `BUBBLE_SANDBOX_`
+prefix:
 
-| Variable                              | Default          | Description                          |
-|---------------------------------------|------------------|--------------------------------------|
-| `BUBBLE_SANDBOX_ENVIRONMENTS_DIR`        | `environments`   | Path to environments directory       |
-| `BUBBLE_SANDBOX_WORKSPACE_DIR`           | `workspace_data` | Root directory for session workspaces and volumes |
-| `BUBBLE_SANDBOX_MAX_UPLOAD_SIZE_BYTES`   | `10485760`       | Max total upload size (10 MB)        |
-| `BUBBLE_SANDBOX_ALLOWED_EXTENSIONS`      | `[".txt",".csv",".md",".json",".yaml",".yml",".tsv",".xml"]` | Allowed file extensions (JSON list) |
-| `BUBBLE_SANDBOX_EXECUTION_TIMEOUT_SECONDS`| `30`            | Max script execution time            |
-| `BUBBLE_SANDBOX_SESSION_IDLE_TIMEOUT_SECONDS`| `3600`       | Session idle timeout (seconds)       |
-| `BUBBLE_SANDBOX_MAX_SESSIONS`            | `50`             | Maximum concurrent sessions          |
-| `BUBBLE_SANDBOX_ALLOW_PERSISTENT_SESSIONS`| `true`          | Allow `clear_data=false` on delete   |
-| `BUBBLE_SANDBOX_LOG_LEVEL`               | `INFO`           | Log level (JSON to stdout)           |
+| Variable                                   | Default        | Description                                            |
+|--------------------------------------------|----------------|--------------------------------------------------------|
+| `BUBBLE_SANDBOX_ENVIRONMENTS_PATHNAME`     | `environments` | Path to the environments directory                     |
+| `BUBBLE_SANDBOX_EXECUTION_TIMEOUT_SECONDS` | `30`           | Max wall-clock time for one execution                  |
+| `BUBBLE_SANDBOX_MAX_OUTPUT_CHARS`          | `100000`       | Combined stdout+stderr is truncated past this          |
+| `BUBBLE_SANDBOX_ENABLE_NETWORK`            | `false`        | Allow network access from the sandbox (see below)      |
+| `BUBBLE_SANDBOX_CONFIG_FILE_PATH`          | *(unset)*      | Anchors `environments_pathname` to this file's dir     |
+
+The same keys can be given in a YAML file passed with `-c/--config`. Note
+that `-c` *replaces* environment-variable loading rather than layering over
+it, so a config file must spell out every non-default setting it wants.
+
+### Network access
+
+Network access is **off by default**: the sandbox is created with
+`--unshare-net` and has no network at all. To turn it on globally:
+
+```bash
+export BUBBLE_SANDBOX_ENABLE_NETWORK=true
+```
+
+or in a config file:
+
+```yaml
+enable_network: true
+```
+
+Every exec command also takes `--network` / `--no-network`, which overrides
+the configured default for that one run:
+
+```bash
+uv run bubble-sandbox execute-python -e my-env --network \
+  -s 'import requests; print(requests.get("https://example.com").status_code)'
+```
+
+Enabling the network additionally bind-mounts a small read-only set of host
+`/etc` paths into the sandbox — `resolv.conf`, `hosts`, `nsswitch.conf`,
+`host.conf`, `gai.conf`, and the CA trust stores. Nothing under `/etc` is
+mounted otherwise, and without those files a networked sandbox could only
+reach IP literals: name resolution and TLS verification would both fail.
+
+Two caveats worth knowing before enabling it:
+
+- The sandbox shares the **host's** network namespace, so it can reach
+  everything the host can, including loopback services and anything on the
+  local network. There is no egress filtering here; if you need one, put
+  the sandbox behind a network namespace or firewall you control.
+- Sandboxed code is generally untrusted, and network access is what turns
+  a data-exfiltration bug into data exfiltration. Prefer leaving it off and
+  enabling it per-run with `--network`.
 
 ## Adding Environments
 
@@ -186,7 +226,10 @@ uv run bubble-sandbox exec-script \
   --script='import requests; print(requests.get("http://example.com").status_code)'
 ```
 
-Note: network access is disabled in the sandbox by default, so scripts that make HTTP requests will fail. The environment provides the *libraries*, not network access.
+Note: an environment provides the *libraries*, not network access — the two
+are configured separately. Network access is disabled by default, so the
+script above fails unless the sandbox is also run with `--network` or with
+`enable_network` set. See [Network access](#network-access).
 
 ### Bundled environments
 
@@ -202,7 +245,7 @@ Each script execution is wrapped in a bubblewrap sandbox that provides:
 - **Filesystem isolation**: read-only bind mounts for system libraries and the selected venv; a writable tmpfs for `/tmp`; uploaded files available in the working directory
 - **User namespace** (`--unshare-user`): runs as an unprivileged user
 - **PID namespace** (`--unshare-pid`): cannot see or signal other processes
-- **Network isolation** (`--unshare-net`): no network access (loopback only)
+- **Network isolation** (`--unshare-net`): no network access (loopback only). This is the default and can be lifted per run or globally — see [Network access](#network-access)
 - **Session isolation** (`--new-session`): no TTY control
 - **Auto-cleanup** (`--die-with-parent`): sandbox is killed if the server process dies
 
