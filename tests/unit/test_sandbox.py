@@ -37,6 +37,8 @@ OTHER_VOLUME_RO = bs_models.VolumeInfo(
 )
 
 
+_CORE_SIMPLE_DIRS = ("/lib64", "/etc/alternatives", "/etc/fonts")
+
 ONE_ARG_MULTIS = {
     "--proc",
     "--dev",
@@ -78,24 +80,35 @@ def _extract_multis(cmd):
         ({"network": True}, False),
     ],
 )
-@pytest.mark.parametrize("w_lib64", [False, True])
+@pytest.mark.parametrize(
+    "extant_dirs",
+    [
+        (),
+        ("/lib64",),
+        ("/etc/alternatives",),
+        ("/etc/fonts",),
+        _CORE_SIMPLE_DIRS,
+    ],
+)
 def test_core_sandbox_args(
     monkeypatch,
-    w_lib64,
+    extant_dirs,
     network_kwargs,
     has_unshare_net,
     w_sys_base_prefix,
     exp_ro_bind,
 ):
-    unbound = pathlib.Path.exists
+    unbound = pathlib.Path.is_dir
 
-    def _lib64_exists(self):
-        if str(self) == "/lib64":
-            return w_lib64
-        else:  # pragma: NO COVER
-            return unbound(self)
+    def _fake_is_dir(self):
+        for known_dir in _CORE_SIMPLE_DIRS:
+            if self == pathlib.Path(known_dir):
+                return known_dir in extant_dirs
 
-    monkeypatch.setattr(pathlib.Path, "exists", _lib64_exists)
+        return unbound(self)  # pragma: NO COVER
+
+    monkeypatch.setattr(pathlib.Path, "is_dir", _fake_is_dir)
+    monkeypatch.setattr(bs_sandbox, "openjdk_binds", lambda: [])
     monkeypatch.setattr(bs_sandbox, "_SYS_BASE_PREFIX", w_sys_base_prefix)
 
     found = bs_sandbox.core_sandbox_args(**network_kwargs)
@@ -135,10 +148,11 @@ def test_core_sandbox_args(
     assert ("/var/empty", "0644") in w_perms["dirs"]
 
     # Only if host platform has it:
-    if w_lib64:
-        assert ("/lib64", "/lib64") in ro_binds
-    else:
-        assert ("/lib64", "/lib64") not in ro_binds
+    for known_dir in _CORE_SIMPLE_DIRS:
+        if known_dir in extant_dirs:
+            assert (known_dir, known_dir) in ro_binds
+        else:
+            assert (known_dir, known_dir) not in ro_binds
 
     if exp_ro_bind is not None:
         assert exp_ro_bind in ro_binds
@@ -158,6 +172,108 @@ def test_core_sandbox_args(
         assert "--unshare-net" in rest
     else:
         assert "--unshare-net" not in rest
+
+
+def test_core_sandbox_args_w_openjdk(monkeypatch):
+    monkeypatch.setattr(
+        bs_sandbox,
+        "openjdk_binds",
+        lambda: ["--ro-bind", "/etc/java-21-openjdk", "/etc/java-21-openjdk"],
+    )
+
+    found = bs_sandbox.core_sandbox_args()
+
+    multis = _extract_multis(found)
+    ro_binds = multis["--ro-bind"]
+    assert ("/etc/java-21-openjdk", "/etc/java-21-openjdk") in ro_binds
+
+
+_OPENJDK_SIMPLE_DIRS = (
+    "/usr/lib/jvm",
+    "/usr/share/java",
+    "/etc/java",
+)
+
+
+@pytest.mark.parametrize(
+    "glob_results, exp_glob_binds",
+    [
+        ([], []),
+        (
+            [("/etc/java-21-openjdk", True)],
+            [("/etc/java-21-openjdk", "/etc/java-21-openjdk")],
+        ),
+        (
+            [
+                ("/etc/java-17-openjdk", True),
+                ("/etc/java-21-openjdk", True),
+                ("/etc/java-not-a-dir-openjdk", False),
+            ],
+            [
+                ("/etc/java-17-openjdk", "/etc/java-17-openjdk"),
+                ("/etc/java-21-openjdk", "/etc/java-21-openjdk"),
+            ],
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "extant_dirs",
+    [
+        (),
+        ("/usr/lib/jvm",),
+        ("/usr/share/java",),
+        ("/etc/java",),
+        _OPENJDK_SIMPLE_DIRS,
+    ],
+)
+def test_openjdk_binds(monkeypatch, extant_dirs, glob_results, exp_glob_binds):
+    class _FakeJavaPath:
+        def __init__(self, path_str, is_dir_value):
+            self._path_str = path_str
+            self._is_dir_value = is_dir_value
+
+        def __str__(self):
+            return self._path_str
+
+        def __lt__(self, other):
+            return str(self) < str(other)
+
+        def is_dir(self):
+            return self._is_dir_value
+
+    unbound_is_dir = pathlib.Path.is_dir
+
+    def _fake_glob(self, pattern):
+        if self == pathlib.Path("/etc") and pattern == "java-*-openjdk":
+            return iter(
+                _FakeJavaPath(path, is_dir) for path, is_dir in glob_results
+            )
+        else:  # pragma: NO COVER
+            raise AssertionError(self, pattern)
+
+    def _fake_is_dir(self):
+        for known_dir in _OPENJDK_SIMPLE_DIRS:
+            if self == pathlib.Path(known_dir):
+                return known_dir in extant_dirs
+
+        return unbound_is_dir(self)  # pragma: NO COVER
+
+    monkeypatch.setattr(pathlib.Path, "glob", _fake_glob)
+    monkeypatch.setattr(pathlib.Path, "is_dir", _fake_is_dir)
+
+    found = bs_sandbox.openjdk_binds()
+
+    multis = _extract_multis(found)
+    ro_binds = multis.get("--ro-bind", [])
+
+    exp_binds = [
+        (known_dir, known_dir)
+        for known_dir in _OPENJDK_SIMPLE_DIRS
+        if known_dir in extant_dirs
+    ]
+    exp_binds.extend(exp_glob_binds)
+
+    assert ro_binds == exp_binds
 
 
 def test_venv_sandbox_args(sandbox_config, environments_path):

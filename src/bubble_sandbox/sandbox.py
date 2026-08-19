@@ -13,11 +13,58 @@ _SYS_BASE_PREFIX = sys.base_prefix
 _MAX_OUTPUT_CHARS = 100_000
 
 
+def _extant_ro_binds(*paths: str) -> list[str]:
+    """Return '--ro-bind' args for each given path that is an extant
+    directory on the host.
+    """
+    result = []
+
+    for path in paths:
+        if pathlib.Path(path).is_dir():
+            result.extend(["--ro-bind", path, path])
+
+    return result
+
+
+def openjdk_binds() -> list[str]:
+    """Return '--ro-bind' args for OpenJDK install and config
+    directories found on the host (e.g. '/usr/lib/jvm',
+    '/usr/share/java', '/etc/java', '/etc/java-21-openjdk').
+
+    JDKs are typically installed under '/usr/lib/jvm', with shared
+    jars under '/usr/share/java'; RPM-based distros (Fedora, RHEL,
+    etc.) additionally keep a symlink farm for each installed OpenJDK
+    version at '/etc/java-<N>-openjdk', while Debian-based distros
+    keep shared alternatives config at '/etc/java'. None of these are
+    necessarily covered by the '/usr' bind mount above, so any that
+    are present must be added explicitly.
+
+    Commands such as '/usr/bin/java' are themselves usually symlinks
+    through '/etc/alternatives' to the real binary; that directory is
+    bound generally in 'core_sandbox_args' since it's shared by many
+    update-alternatives-managed commands, not just Java's.
+    """
+    result = _extant_ro_binds(
+        "/usr/lib/jvm",
+        "/usr/share/java",
+        "/etc/java",
+    )
+
+    for etc_openjdk_path in sorted(
+        pathlib.Path("/etc").glob("java-*-openjdk")
+    ):
+        if etc_openjdk_path.is_dir():
+            etc_openjdk = str(etc_openjdk_path)
+            result.extend(["--ro-bind", etc_openjdk, etc_openjdk])
+
+    return result
+
+
 def core_sandbox_args(network: bool = False) -> list[str]:
     """Return 'bwrap' and arguments which are always present
 
-    Include a mount for '/lib64' only if that directory is present
-    on the host system.
+    Include mounts for '/lib64', '/etc/alternatives', and '/etc/fonts'
+    only if those directories are present on the host system.
 
     Args:
       'network' (boolean): if True, omit the '--unshare-net' flag
@@ -38,8 +85,10 @@ def core_sandbox_args(network: bool = False) -> list[str]:
         "/usr/share",
     ]
 
-    if pathlib.Path("/lib64").exists():
-        result.extend(["--ro-bind", "/lib64", "/lib64"])
+    result.extend(
+        _extant_ro_binds("/lib64", "/etc/alternatives", "/etc/fonts")
+    )
+    result.extend(openjdk_binds())
 
     if _SYS_BASE_PREFIX != "/usr":
         result.extend(
