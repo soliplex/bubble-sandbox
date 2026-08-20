@@ -14,13 +14,13 @@ _MAX_OUTPUT_CHARS = 100_000
 
 
 def _extant_ro_binds(*paths: str) -> list[str]:
-    """Return '--ro-bind' args for each given path that is an extant
-    directory on the host.
+    """Return '--ro-bind' args for each given path that exists (as a
+    file or a directory) on the host.
     """
     result = []
 
     for path in paths:
-        if pathlib.Path(path).is_dir():
+        if pathlib.Path(path).exists():
             result.extend(["--ro-bind", path, path])
 
     return result
@@ -63,8 +63,16 @@ def openjdk_binds() -> list[str]:
 def core_sandbox_args(network: bool = False) -> list[str]:
     """Return 'bwrap' and arguments which are always present
 
-    Include mounts for '/lib64', '/etc/alternatives', and '/etc/fonts'
-    only if those directories are present on the host system.
+    Include mounts for '/lib64', '/etc/alternatives', '/etc/fonts',
+    '/etc/papersize', and '/etc/paperspecs' only if present on the host.
+
+    '/etc/papersize' names the configured default paper size (e.g.
+    "letter"), and '/etc/paperspecs' is libpaper's own lookup table
+    mapping every recognized paper name to its dimensions (confirmed via
+    strace: dvipdfmx/libpaper opens both). Without '/etc/paperspecs' in
+    particular, libpaper has no table to validate *any* name against, so
+    every paper format -- not just the configured default -- comes back
+    "Unrecognized paper format" regardless of '-p'/$PAPERSIZE.
 
     Args:
       'network' (boolean): if True, omit the '--unshare-net' flag
@@ -86,7 +94,13 @@ def core_sandbox_args(network: bool = False) -> list[str]:
     ]
 
     result.extend(
-        _extant_ro_binds("/lib64", "/etc/alternatives", "/etc/fonts")
+        _extant_ro_binds(
+            "/lib64",
+            "/etc/alternatives",
+            "/etc/fonts",
+            "/etc/papersize",
+            "/etc/paperspecs",
+        )
     )
     result.extend(openjdk_binds())
 
