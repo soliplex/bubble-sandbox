@@ -250,13 +250,30 @@ class InvalidScriptPath(ValueError):
 
 def _script_path_parts(script_path: str) -> tuple[str, ...]:
     """Return validated components of a relative script path."""
-    pure = pathlib.PurePosixPath(script_path)
-    windows = pathlib.PureWindowsPath(script_path)
+    if script_path.strip() != script_path:
+        raise InvalidScriptPath(
+            script_path,
+            "Paths with leading / trailing whitespace not allowed",
+        )
 
-    if pure.is_absolute() or windows.is_absolute():
+    if "\\" in script_path:
+        raise InvalidScriptPath(
+            script_path,
+            "Windows-style paths are not allowed",
+        )
+
+    if script_path.endswith("/"):
+        raise InvalidScriptPath(
+            script_path,
+            "Cannot write a directory",
+        )
+
+    path = pathlib.PurePosixPath(script_path)
+
+    if path.is_absolute():
         raise InvalidScriptPath(script_path, "must be relative to the workdir")
 
-    parts = tuple(part for part in pure.parts if part != ".")
+    parts = tuple(part for part in path.parts if part != ".")
 
     if not parts:
         raise InvalidScriptPath(script_path, "names no file")

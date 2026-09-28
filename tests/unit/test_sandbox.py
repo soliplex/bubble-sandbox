@@ -16,6 +16,8 @@ from bubble_sandbox import sandbox as bs_sandbox
 ENVIRONMENT_NAME = "test_environment"
 OTHER_ENVIRONMENT_NAME = "other_test_environment"
 WORKDIR_NAME = "test_workdir"
+WHITESPACE_REASON = "Paths with leading / trailing whitespace not allowed"
+WINDOWS_REASON = "Windows-style paths are not allowed"
 HOST_VOLUME_PATH = pathlib.Path("/path/to/host/volume")
 VOLUME_RO = bs_models.VolumeInfo(
     host_path=HOST_VOLUME_PATH,
@@ -381,6 +383,45 @@ def test_volumes_sandbox_args(volume_map, expected):
     found = bs_sandbox.volumes_sandbox_args(volume_map)
 
     assert found == expected
+
+
+@pytest.mark.parametrize(
+    "w_script_path, expected",
+    [
+        ("script.py", ("script.py",)),
+        ("./script.py", ("script.py",)),
+        ("a//b.py", ("a", "b.py")),
+        ("snapshots/run-1/script.py", ("snapshots", "run-1", "script.py")),
+    ],
+)
+def test__script_path_parts_accepts(w_script_path, expected):
+    found = bs_sandbox._script_path_parts(w_script_path)
+
+    assert found == expected
+
+
+@pytest.mark.parametrize(
+    "w_script_path, expected_reason",
+    [
+        (" script.py", WHITESPACE_REASON),
+        ("script.py\n", WHITESPACE_REASON),
+        ("C:\\escape.py", WINDOWS_REASON),
+        ("\\\\srv\\share\\x.py", WINDOWS_REASON),
+        ("a\\..\\b.py", WINDOWS_REASON),
+        ("dir/", "Cannot write a directory"),
+        ("/etc/passwd", "must be relative to the workdir"),
+        ("../escape.py", "must not contain '..'"),
+        ("nested/../../escape.py", "must not contain '..'"),
+        ("", "names no file"),
+        (".", "names no file"),
+    ],
+)
+def test__script_path_parts_rejects(w_script_path, expected_reason):
+    with pytest.raises(bs_sandbox.InvalidScriptPath) as exc_info:
+        bs_sandbox._script_path_parts(w_script_path)
+
+    assert exc_info.value.script_path == w_script_path
+    assert exc_info.value.reason == expected_reason
 
 
 @pytest.mark.parametrize(
@@ -1049,25 +1090,12 @@ async def test_bwrapsandboxcommand_execute_python_w_script_path(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "w_script_path",
-    [
-        "/etc/passwd",
-        # Absolute under Windows path rules.
-        "C:/escape.py",
-        "../escape.py",
-        "nested/../../escape.py",
-        "",
-        ".",
-    ],
-)
 @mock.patch("asyncio.create_subprocess_exec")
 async def test_bwrapsandboxcommand_execute_python_rejects_script_path(
     cs_exec,
     tmp_path,
     sandbox_config,
     bare_environment,
-    w_script_path,
 ):
     workdir = tmp_path / "work"
     workdir.mkdir()
@@ -1081,7 +1109,7 @@ async def test_bwrapsandboxcommand_execute_python_rejects_script_path(
         await sandbox.execute_python(
             script="print('hello')",
             workdir=workdir,
-            script_path=w_script_path,
+            script_path="../escape.py",
         )
 
     cs_exec.assert_not_called()
