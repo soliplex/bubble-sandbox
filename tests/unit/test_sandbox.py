@@ -520,7 +520,8 @@ async def test_bwrapsandboxcommand_execute_python_w_success(
     )
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output == "hello\n"
+    assert found.stdout == "hello\n"
+    assert found.stderr == ""
     assert found.exit_code == 0
     assert not found.truncated
 
@@ -573,7 +574,8 @@ async def test_bwrapsandboxcommand_execute_python_w_truncation(
     exp_output = "X" * 8 + "\n[... 83 characters omitted ...]\n" + "X" * 9
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output == exp_output
+    assert found.stdout == exp_output
+    assert found.stderr == ""
     assert found.exit_code == 0
     assert found.truncated
 
@@ -613,7 +615,8 @@ async def test_bwrapsandboxcommand_execute_python_w_error(
     found = await sandbox.execute_python(script=script, workdir=workdir)
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output == "error"
+    assert found.stdout == ""
+    assert found.stderr == "error"
     assert found.exit_code == 1
 
 
@@ -714,7 +717,8 @@ async def test_bwrapsandboxcommand_execute_w_success(
     )
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output == ".  ..\n"
+    assert found.stdout == ".  ..\n"
+    assert found.stderr == ""
     assert found.exit_code == 0
     assert not found.truncated
 
@@ -764,7 +768,8 @@ async def test_bwrapsandboxcommand_execute_wo_workdir(
     found = await sandbox.execute(command=command)
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output == "hello\n"
+    assert found.stdout == "hello\n"
+    assert found.stderr == ""
     assert found.exit_code == 0
     assert not found.truncated
 
@@ -799,7 +804,8 @@ async def test_bwrapsandboxcommand_execute_w_truncation(
     exp_output = "X" * 8 + "\n[... 83 characters omitted ...]\n" + "X" * 9
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output == exp_output
+    assert found.stdout == exp_output
+    assert found.stderr == ""
     assert found.exit_code == 0
     assert found.truncated
 
@@ -830,7 +836,8 @@ async def test_bwrapsandboxcommand_execute_w_error(
     found = await sandbox.execute(command=command, workdir=workdir)
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output == "error"
+    assert found.stdout == ""
+    assert found.stderr == "error"
     assert found.exit_code == 1
 
 
@@ -910,7 +917,6 @@ async def test_bwrapsandboxcommand_execute_separates_streams(
 
     assert found.stdout == "the answer\n"
     assert found.stderr == "a warning\n"
-    assert found.output == "the answer\na warning\n"
     assert not found.timed_out
 
 

@@ -8,7 +8,7 @@ from bubble_sandbox import models as bs_models
     "w_kwargs, exp_status, exp_code",
     [
         ({"stdout": "hi\n", "exit_code": 0}, None, 0),
-        ({"exit_code": 3}, "Exited with code: 3", 3),
+        ({"stderr": "oops\n", "exit_code": 3}, "Exited with code: 3", 3),
         (
             {"timed_out": True, "timeout_seconds": 30.0},
             "Timed out after 30 seconds",

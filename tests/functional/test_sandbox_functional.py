@@ -16,7 +16,7 @@ async def test_bwrapsandboxcommand_execute_python_wo_workdir(
     found = await sandbox.execute_python(script=script)
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output.startswith("/sandbox/work")
+    assert found.stdout.startswith("/sandbox/work")
     assert not found.truncated
 
 
@@ -38,7 +38,7 @@ async def test_bwrapsandboxcommand_execute_python_w_workdir(
     found = await sandbox.execute_python(script=script, workdir=workdir)
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output.startswith("/sandbox/work")
+    assert found.stdout.startswith("/sandbox/work")
     assert not found.truncated
 
 
@@ -57,7 +57,7 @@ async def test_bwrapsandboxcommand_execute_python_w_truncation(
     found = await sandbox.execute_python(script=script)
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output == "X" * 10
+    assert found.stdout == "X" * 10
     assert found.truncated
 
 
@@ -75,7 +75,7 @@ async def test_bwrapsandboxcommand_execute_command_wo_workdir(
     found = await sandbox.execute(command=command)
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output.splitlines() == [
+    assert found.stdout.splitlines() == [
         ".",
         "..",
         "venv",
@@ -101,7 +101,7 @@ async def test_bwrapsandboxcommand_execute_command_w_workdir(
     found = await sandbox.execute(command=command, workdir=workdir)
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output.splitlines() == [
+    assert found.stdout.splitlines() == [
         ".",
         "..",
         "venv",

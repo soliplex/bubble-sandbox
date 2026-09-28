@@ -90,7 +90,3 @@ class ExecuteResult(pydantic.BaseModel):
     max_output_chars: int | None = None
     timed_out: bool = False
     timeout_seconds: float | None = None
-
-    @property
-    def output(self) -> str:
-        return self.stdout + self.stderr

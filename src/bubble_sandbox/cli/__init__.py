@@ -211,7 +211,11 @@ def print_agent_mode_response(response: bs_models.ExecuteResult):
     if status is not None:
         print(status)
 
-    print(response.output, end="")
+    if response.stdout:
+        print(response.stdout, end="")
+
+    if response.stderr:
+        print(response.stderr, end="")
 
     if response.truncated:
         print("\n<truncated>")
@@ -225,7 +229,11 @@ def print_response(
     if status is not None:
         the_console.print(status)
 
-    the_console.print(response.output, end="")
+    if response.stdout:
+        print(response.stdout, end="")
+
+    if response.stderr:
+        print(response.stderr, end="")
 
     if response.truncated:
         the_console.print("\n<truncated>")
