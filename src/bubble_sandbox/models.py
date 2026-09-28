@@ -51,18 +51,42 @@ class ExecuteResult(pydantic.BaseModel):
 
     Args:
 
+      'stdout'
+        What the execution wrote to stdout, truncated to
+        'max_output_chars' by replacing its middle with a marker.
+
+      'stderr'
+        What it wrote to stderr, truncated the same way.  The limit
+        applies to each stream separately.
+
       'output'
-        Concatenated stdout / stderr from the execution
+        'stdout' and 'stderr' concatenated.
 
       'exit_code'
-        Code returned from the execution ('None' indicates that
-        the requested command / script was not executed).
+        Code returned from the execution.  'None' when it did not run to
+        completion: it was never executed, or it timed out.
 
-      'trunctated'
-        True if 'output' was longer than the configured maximum
-        length, else False.
+      'truncated'
+        True if either stream was longer than 'max_output_chars'.
+
+      'max_output_chars'
+        The per-stream limit truncation was applied at.
+
+      'timed_out'
+        True if the execution was killed for exceeding
+        'timeout_seconds'.
+
+      'timeout_seconds'
+        The limit that was applied, whether or not it was hit.
     """
 
-    output: str
+    # An unknown field is an error, not something to drop silently.
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+    stdout: str = ""
+    stderr: str = ""
     exit_code: int | None = None
     truncated: bool = False
+    max_output_chars: int | None = None
+    timed_out: bool = False
+    timeout_seconds: float | None = None

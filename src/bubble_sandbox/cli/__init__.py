@@ -178,11 +178,44 @@ def make_sandbox(
     )
 
 
-def print_agent_mode_response(response: bs_models.ExecuteResult):
-    if response.exit_code:
-        print(f"Exited with code: {response.exit_code}")
+def response_status_line(response: bs_models.ExecuteResult) -> str | None:
+    """Return the execution status message, or 'None' if it ended
+    cleanly."""
+    if response.timed_out:
+        return f"Timed out after {response.timeout_seconds:g} seconds"
 
-    print(response.output, end="")
+    if response.exit_code:
+        if response.exit_code < 0:
+            return f"Terminated by signal {-response.exit_code}"
+
+        return f"Exited with code: {response.exit_code}"
+
+    return None
+
+
+def response_exit_code(response: bs_models.ExecuteResult) -> int:
+    """Return the CLI exit status."""
+    if response.timed_out:
+        return 124  # as 'timeout(1)' reports one
+
+    exit_code = response.exit_code or 0
+
+    if exit_code < 0:
+        return 128 - exit_code
+
+    return exit_code
+
+
+def print_agent_mode_response(response: bs_models.ExecuteResult):
+    status = response_status_line(response)
+    if status is not None:
+        print(status)
+
+    if response.stdout:
+        print(response.stdout, end="")
+
+    if response.stderr:
+        print(response.stderr, end="")
 
     if response.truncated:
         print("\n<truncated>")
@@ -192,13 +225,34 @@ def print_response(
     response: bs_models.ExecuteResult,
     the_console: rich.console.Console,
 ):
-    if response.exit_code:
-        the_console.print(f"Exited with code: {response.exit_code}")
+    status = response_status_line(response)
+    if status is not None:
+        the_console.print(status)
 
-    the_console.print(response.output, end="")
+    if response.stdout:
+        print(response.stdout, end="")
+
+    if response.stderr:
+        print(response.stderr, end="")
 
     if response.truncated:
         the_console.print("\n<truncated>")
+
+
+def report_response(
+    response: bs_models.ExecuteResult,
+    the_console: rich.console.Console,
+    agent_mode: bool,
+):
+    """Render the response and raise for a nonzero status."""
+    if agent_mode:
+        print_agent_mode_response(response)
+    else:
+        print_response(response, the_console)
+
+    status = response_exit_code(response)
+    if status:
+        raise typer.Exit(code=status)
 
 
 @the_cli.command(
@@ -249,10 +303,7 @@ def execute_python(
             )
         )
 
-    if agent_mode:
-        print_agent_mode_response(response)
-    else:
-        print_response(response, the_console)
+    report_response(response, the_console, agent_mode)
 
 
 # Leave 'exec-script' behind as a hidden backward-compat alias
@@ -297,10 +348,7 @@ def execute(
             )
         )
 
-    if agent_mode:
-        print_agent_mode_response(response)
-    else:
-        print_response(response, the_console)
+    report_response(response, the_console, agent_mode)
 
 
 @the_cli.command(
@@ -343,7 +391,4 @@ def exec_command(
             )
         )
 
-    if agent_mode:
-        print_agent_mode_response(response)
-    else:
-        print_response(response, the_console)
+    report_response(response, the_console, agent_mode)

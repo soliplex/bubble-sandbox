@@ -93,15 +93,15 @@ Every `run_script` tool call must include **both** fields: `script` (the path, e
    print(result)
    ```
 
-   If the script is already saved on the host (e.g. `task.py`), pass its path as the second argument instead: `scripts/run_python.sh <env> task.py`. Output is your script's raw stdout; on failure, a line `Exited with code: <N>` is prepended before the traceback, and `<truncated>` is appended if the output was cut off.
+   If the script is already saved on the host (e.g. `task.py`), pass its path as the second argument instead: `scripts/run_python.sh <env> task.py`. Output is your script's stdout followed by its stderr. If the run did not end cleanly, one status line comes first: `Exited with code: <N>`, `Terminated by signal <N>`, or `Timed out after <N> seconds`. A stream that was too long has its middle replaced by `[... <N> characters omitted ...]`, and `<truncated>` is appended.
 
 5. **On failure.**
    - Change exactly one thing per retry.
-   - After 3 failed runs, stop. Report the error to the user (paste the `Exited with code: <N>` line and the traceback) instead of retrying further.
+   - After 3 failed runs, stop. Report the error to the user (paste the status line and the traceback) instead of retrying further.
 
 ## Output
 
-- Print the answer to stdout. Only stdout is shown to the user.
+- Print the answer to stdout. Keep stderr for errors: both streams come back to you, and the user sees neither.
 - If the answer is more than ~20 rows or lines, print a short summary (head, counts, totals) and write the full detail to a file under `/sandbox/work/`.
 - Do not print narration lines like "Loading data…" or "Processing…". Just run the script.
 - After the script succeeds, report the result to the user in one or two sentences.

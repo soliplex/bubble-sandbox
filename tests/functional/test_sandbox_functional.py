@@ -16,7 +16,7 @@ async def test_bwrapsandboxcommand_execute_python_wo_workdir(
     found = await sandbox.execute_python(script=script)
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output.startswith("/sandbox/work")
+    assert found.stdout.startswith("/sandbox/work")
     assert not found.truncated
 
 
@@ -38,7 +38,7 @@ async def test_bwrapsandboxcommand_execute_python_w_workdir(
     found = await sandbox.execute_python(script=script, workdir=workdir)
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output.startswith("/sandbox/work")
+    assert found.stdout.startswith("/sandbox/work")
     assert not found.truncated
 
 
@@ -57,7 +57,7 @@ async def test_bwrapsandboxcommand_execute_python_w_truncation(
     found = await sandbox.execute_python(script=script)
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output == "X" * 10
+    assert found.stdout == "X" * 10
     assert found.truncated
 
 
@@ -75,7 +75,7 @@ async def test_bwrapsandboxcommand_execute_command_wo_workdir(
     found = await sandbox.execute(command=command)
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output.splitlines() == [
+    assert found.stdout.splitlines() == [
         ".",
         "..",
         "venv",
@@ -101,10 +101,80 @@ async def test_bwrapsandboxcommand_execute_command_w_workdir(
     found = await sandbox.execute(command=command, workdir=workdir)
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output.splitlines() == [
+    assert found.stdout.splitlines() == [
         ".",
         "..",
         "venv",
         "work",
     ]
     assert not found.truncated
+
+
+async def test_bwrapsandboxcommand_execute_separates_streams(
+    sandbox_config,
+    bare_environment,
+):
+    script = (
+        "import sys\n"
+        "print('the answer')\n"
+        "print('a warning', file=sys.stderr)\n"
+    )
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment="bare",
+        config=sandbox_config,
+    )
+
+    found = await sandbox.execute_python(script=script)
+
+    assert found.stdout == "the answer\n"
+    assert found.stderr == "a warning\n"
+    assert found.exit_code == 0
+    assert not found.timed_out
+
+
+async def test_bwrapsandboxcommand_execute_python_w_script_name(
+    tmp_path,
+    sandbox_config,
+    bare_environment,
+):
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment="bare",
+        config=sandbox_config,
+    )
+
+    found = await sandbox.execute_python(
+        script="import sys; print(sys.argv[0])",
+        workdir=workdir,
+        script_name="run-1.py",
+    )
+
+    assert found.exit_code == 0
+    assert found.stdout == "/sandbox/work/run-1.py\n"
+    written = workdir / "run-1.py"
+    assert written.read_text(encoding="utf-8") == (
+        "import sys; print(sys.argv[0])"
+    )
+
+
+async def test_bwrapsandboxcommand_execute_python_w_real_timeout(
+    sandbox_config,
+    bare_environment,
+):
+    sandbox_config.execution_timeout_seconds = 0.5
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment="bare",
+        config=sandbox_config,
+    )
+
+    found = await sandbox.execute_python(
+        script="import time; time.sleep(30)",
+    )
+
+    assert found.timed_out
+    assert found.timeout_seconds == 0.5
+    assert found.exit_code is None

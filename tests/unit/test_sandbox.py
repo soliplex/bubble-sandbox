@@ -1,7 +1,11 @@
 import asyncio
 import contextlib
+import os
 import pathlib
+import signal
+import stat
 import sys
+import time
 from unittest import mock
 
 import pytest
@@ -380,6 +384,41 @@ def test_volumes_sandbox_args(volume_map, expected):
 
 
 @pytest.mark.parametrize(
+    "w_script_name",
+    ["script.py", "run-1.py", ".hidden.py"],
+)
+def test__validate_script_name_accepts(w_script_name):
+    found = bs_sandbox._validate_script_name(w_script_name)
+
+    assert found == w_script_name
+
+
+@pytest.mark.parametrize(
+    "w_script_name, expectation",
+    [
+        (" script.py", pytest.raises(bs_sandbox.LeadingTrailingWhitespace)),
+        ("script.py\n", pytest.raises(bs_sandbox.LeadingTrailingWhitespace)),
+        ("C:\\escape.py", pytest.raises(bs_sandbox.WindowsStylePath)),
+        ("\\\\srv\\share\\x.py", pytest.raises(bs_sandbox.WindowsStylePath)),
+        ("a\\..\\b.py", pytest.raises(bs_sandbox.WindowsStylePath)),
+        ("dir/", pytest.raises(bs_sandbox.NotInWorkdirRoot)),
+        ("./script.py", pytest.raises(bs_sandbox.NotInWorkdirRoot)),
+        ("snapshots/script.py", pytest.raises(bs_sandbox.NotInWorkdirRoot)),
+        ("/etc/passwd", pytest.raises(bs_sandbox.NotInWorkdirRoot)),
+        ("../escape.py", pytest.raises(bs_sandbox.NotInWorkdirRoot)),
+        ("", pytest.raises(bs_sandbox.NamesNoFile)),
+        (".", pytest.raises(bs_sandbox.NamesNoFile)),
+        ("..", pytest.raises(bs_sandbox.NamesNoFile)),
+    ],
+)
+def test__validate_script_name_rejects(w_script_name, expectation):
+    with expectation as exc_info:
+        bs_sandbox._validate_script_name(w_script_name)
+
+    assert exc_info.value.script_name == w_script_name
+
+
+@pytest.mark.parametrize(
     "xtra_args_kwargs",
     [
         {},
@@ -516,7 +555,8 @@ async def test_bwrapsandboxcommand_execute_python_w_success(
     )
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output == "hello\n"
+    assert found.stdout == "hello\n"
+    assert found.stderr == ""
     assert found.exit_code == 0
     assert not found.truncated
 
@@ -566,10 +606,11 @@ async def test_bwrapsandboxcommand_execute_python_w_truncation(
     )
 
     found = await sandbox.execute_python(script=script, workdir=workdir)
-    exp_output = MUST_TRUNCATE[:50].decode("ascii")
+    exp_output = "X" * 8 + "\n[... 83 characters omitted ...]\n" + "X" * 9
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output == exp_output
+    assert found.stdout == exp_output
+    assert found.stderr == ""
     assert found.exit_code == 0
     assert found.truncated
 
@@ -609,7 +650,8 @@ async def test_bwrapsandboxcommand_execute_python_w_error(
     found = await sandbox.execute_python(script=script, workdir=workdir)
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output == "error"
+    assert found.stdout == ""
+    assert found.stderr == "error"
     assert found.exit_code == 1
 
 
@@ -650,8 +692,8 @@ async def test_bwrapsandboxcommand_execute_python_w_timeout(
     )
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert "timed out" in found.output
-    assert found.exit_code == -1
+    assert found.timed_out
+    assert found.exit_code is None
 
     proc.kill.assert_called_once_with()
     proc.wait.assert_awaited_once_with()
@@ -710,7 +752,8 @@ async def test_bwrapsandboxcommand_execute_w_success(
     )
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output == ".  ..\n"
+    assert found.stdout == ".  ..\n"
+    assert found.stderr == ""
     assert found.exit_code == 0
     assert not found.truncated
 
@@ -760,7 +803,8 @@ async def test_bwrapsandboxcommand_execute_wo_workdir(
     found = await sandbox.execute(command=command)
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output == "hello\n"
+    assert found.stdout == "hello\n"
+    assert found.stderr == ""
     assert found.exit_code == 0
     assert not found.truncated
 
@@ -792,10 +836,11 @@ async def test_bwrapsandboxcommand_execute_w_truncation(
     )
 
     found = await sandbox.execute(command=command, workdir=workdir)
-    exp_output = MUST_TRUNCATE[:50].decode("ascii")
+    exp_output = "X" * 8 + "\n[... 83 characters omitted ...]\n" + "X" * 9
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output == exp_output
+    assert found.stdout == exp_output
+    assert found.stderr == ""
     assert found.exit_code == 0
     assert found.truncated
 
@@ -826,7 +871,8 @@ async def test_bwrapsandboxcommand_execute_w_error(
     found = await sandbox.execute(command=command, workdir=workdir)
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert found.output == "error"
+    assert found.stdout == ""
+    assert found.stderr == "error"
     assert found.exit_code == 1
 
 
@@ -868,8 +914,8 @@ async def test_bwrapsandboxcommand_execute_w_timeout(
     )
 
     assert isinstance(found, bs_models.ExecuteResult)
-    assert "timed out" in found.output
-    assert found.exit_code == -1
+    assert found.timed_out
+    assert found.exit_code is None
 
     proc.kill.assert_called_once_with()
     proc.wait.assert_awaited_once_with()
@@ -880,3 +926,355 @@ async def test_bwrapsandboxcommand_execute_w_timeout(
     # 'wait_for' raises without awaiting calling the 'proc.communicate' coro
     cs_exec.return_value.communicate.assert_not_awaited()
     await args[0]  # avoid tracemalloc warning
+
+
+@pytest.mark.asyncio
+@mock.patch("asyncio.create_subprocess_exec")
+async def test_bwrapsandboxcommand_execute_separates_streams(
+    cs_exec,
+    tmp_path,
+    sandbox_config,
+    bare_environment,
+):
+    proc = cs_exec.return_value
+    proc.communicate.return_value = (b"the answer\n", b"a warning\n")
+    proc.returncode = 0
+
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment="bare",
+        config=sandbox_config,
+    )
+
+    found = await sandbox.execute(command=["/bin/true"], workdir=workdir)
+
+    assert found.stdout == "the answer\n"
+    assert found.stderr == "a warning\n"
+    assert not found.timed_out
+
+
+@pytest.mark.asyncio
+@mock.patch("asyncio.create_subprocess_exec")
+async def test_bwrapsandboxcommand_execute_truncates_each_stream(
+    cs_exec,
+    tmp_path,
+    sandbox_config,
+    bare_environment,
+):
+    sandbox_config.max_output_chars = 5
+    proc = cs_exec.return_value
+    proc.communicate.return_value = (b"X" * 20, b"Y" * 20)
+    proc.returncode = 0
+
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment="bare",
+        config=sandbox_config,
+    )
+
+    found = await sandbox.execute(command=["/bin/true"], workdir=workdir)
+
+    assert found.stdout == "X" * 5
+    assert found.stderr == "Y" * 5
+    assert found.truncated
+    assert found.max_output_chars == 5
+
+
+@pytest.mark.asyncio
+@mock.patch("asyncio.create_subprocess_exec")
+async def test_bwrapsandboxcommand_execute_reports_untruncated_limit(
+    cs_exec,
+    tmp_path,
+    sandbox_config,
+    bare_environment,
+):
+    proc = cs_exec.return_value
+    proc.communicate.return_value = (b"short", b"")
+    proc.returncode = 0
+
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment="bare",
+        config=sandbox_config,
+    )
+
+    found = await sandbox.execute(command=["/bin/true"], workdir=workdir)
+
+    assert not found.truncated
+    assert found.max_output_chars == sandbox_config.max_output_chars
+
+
+@pytest.mark.asyncio
+@mock.patch("asyncio.wait_for")
+@mock.patch("asyncio.create_subprocess_exec")
+async def test_bwrapsandboxcommand_execute_reports_timeout_distinctly(
+    cs_exec,
+    wait_for,
+    tmp_path,
+    sandbox_config,
+    bare_environment,
+):
+    proc = cs_exec.return_value
+    proc.kill = mock.Mock(spec_set=())
+    proc.returncode = -99
+    wait_for.side_effect = TimeoutError
+
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment="bare",
+        config=sandbox_config,
+    )
+
+    found = await sandbox.execute(
+        command=["/bin/true"],
+        workdir=workdir,
+        timeout=0.02,
+    )
+
+    assert found.timed_out
+    assert found.timeout_seconds == 0.02
+    assert found.exit_code is None
+
+    ((args, kwargs),) = wait_for.call_args_list
+    await args[0]  # avoid tracemalloc warning
+
+
+@pytest.mark.asyncio
+@mock.patch("asyncio.create_subprocess_exec")
+async def test_bwrapsandboxcommand_execute_python_w_script_name(
+    cs_exec,
+    tmp_path,
+    sandbox_config,
+    bare_environment,
+):
+    proc = cs_exec.return_value
+    proc.communicate.return_value = (b"hello\n", b"")
+    proc.returncode = 0
+
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment="bare",
+        config=sandbox_config,
+    )
+
+    await sandbox.execute_python(
+        script="print('hello')",
+        workdir=workdir,
+        script_name="run-1.py",
+    )
+
+    written = workdir / "run-1.py"
+    assert written.read_text(encoding="utf-8") == "print('hello')"
+
+    ((args, _),) = cs_exec.call_args_list
+    assert args[-2:] == (
+        "/sandbox/venv/bin/python",
+        "/sandbox/work/run-1.py",
+    )
+
+
+@pytest.mark.asyncio
+@mock.patch("asyncio.create_subprocess_exec")
+async def test_bwrapsandboxcommand_execute_python_rejects_script_name(
+    cs_exec,
+    tmp_path,
+    sandbox_config,
+    bare_environment,
+):
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment="bare",
+        config=sandbox_config,
+    )
+
+    with pytest.raises(bs_sandbox.NotInWorkdirRoot):
+        await sandbox.execute_python(
+            script="print('hello')",
+            workdir=workdir,
+            script_name="../escape.py",
+        )
+
+    cs_exec.assert_not_called()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX symlinks")
+@pytest.mark.asyncio
+@mock.patch("asyncio.create_subprocess_exec")
+async def test_bwrapsandboxcommand_execute_python_wo_following_symlink(
+    cs_exec,
+    tmp_path,
+    sandbox_config,
+    bare_environment,
+):
+    proc = cs_exec.return_value
+    proc.communicate.return_value = (b"", b"")
+    proc.returncode = 0
+
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    victim = tmp_path / "victim.txt"
+    victim.write_text("ORIGINAL", encoding="utf-8")
+    (workdir / "script.py").symlink_to(victim)
+
+    sandbox = bs_sandbox.BwrapSandbox(
+        default_environment="bare",
+        config=sandbox_config,
+    )
+
+    await sandbox.execute_python(script="print(1)", workdir=workdir)
+
+    assert victim.read_text(encoding="utf-8") == "ORIGINAL"
+    written = workdir / "script.py"
+    assert not written.is_symlink()
+    assert written.read_text(encoding="utf-8") == "print(1)"
+
+
+class _Alarm(BaseException):
+    """Alarm exception outside the 'OSError' hierarchy."""
+
+
+@contextlib.contextmanager
+def _deadline(seconds):
+    def _fire(signum, frame):
+        raise _Alarm
+
+    previous = signal.signal(signal.SIGALRM, _fire)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX FIFOs")
+def test_write_script_wo_blocking_on_fifo(tmp_path):
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    os.mkfifo(workdir / "script.py")
+
+    with _deadline(2.0):
+        bs_sandbox.write_script(workdir, "script.py", "print(1)")
+
+    written = workdir / "script.py"
+    assert stat.S_ISREG(written.lstat().st_mode)
+    assert written.read_text(encoding="utf-8") == "print(1)"
+
+
+def test_write_script_rejects_directory_target(tmp_path):
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    (workdir / "script.py").mkdir()
+
+    with pytest.raises(bs_sandbox.CannotBeReplacedInWorkdir):
+        bs_sandbox.write_script(workdir, "script.py", "print(1)")
+
+    assert [p.name for p in workdir.iterdir()] == ["script.py"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX hard links")
+def test_write_script_replaces_rather_than_writing_through(tmp_path):
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    victim = tmp_path / "victim.txt"
+    victim.write_text("ORIGINAL", encoding="utf-8")
+    (workdir / "script.py").hardlink_to(victim)
+
+    bs_sandbox.write_script(workdir, "script.py", "print(1)")
+
+    assert victim.read_text(encoding="utf-8") == "ORIGINAL"
+    written = workdir / "script.py"
+    assert written.read_text(encoding="utf-8") == "print(1)"
+    assert not written.samefile(victim)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX mode bits")
+def test_write_script_w_owner_only_file(tmp_path):
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    bs_sandbox.write_script(workdir, "script.py", "print(1)")
+
+    assert [p.name for p in workdir.iterdir()] == ["script.py"]
+    assert (workdir / "script.py").stat().st_mode & 0o777 == 0o600
+
+
+def test_deadline_guard_fires():
+    with pytest.raises(_Alarm):
+        with _deadline(0.01):
+            time.sleep(2.0)
+
+
+def test_write_script_w_uncreatable_file(tmp_path, monkeypatch):
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    real_open = os.open
+
+    def _refuse(path, flags, *args, **kwargs):
+        if flags & os.O_CREAT:
+            raise PermissionError(13, "Permission denied")
+
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", _refuse)
+
+    with pytest.raises(bs_sandbox.CannotBeCreatedInWorkdir):
+        bs_sandbox.write_script(workdir, "script.py", "print(1)")
+
+
+def test_write_script_w_unencodable_script(tmp_path):
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    previous = workdir / "script.py"
+    previous.write_text("print(0)", encoding="utf-8")
+
+    with pytest.raises(UnicodeEncodeError):
+        bs_sandbox.write_script(workdir, "script.py", "bad: \udc80")
+
+    assert [p.name for p in workdir.iterdir()] == ["script.py"]
+    assert previous.read_text(encoding="utf-8") == "print(0)"
+
+
+@pytest.mark.parametrize(
+    "w_text, w_limit, exp_text, exp_cut",
+    [
+        ("X" * 50, 50, "X" * 50, False),
+        (
+            "A" * 50 + "Z" * 50,
+            50,
+            "A" * 8 + "\n[... 83 characters omitted ...]\n" + "Z" * 9,
+            True,
+        ),
+        # No room for the marker: keep the beginning.
+        ("X" * 20, 5, "X" * 5, True),
+    ],
+)
+def test_truncate(w_text, w_limit, exp_text, exp_cut):
+    found, cut = bs_sandbox._truncate(w_text, w_limit)
+
+    assert found == exp_text
+    assert cut is exp_cut
+    assert len(found) <= w_limit
+
+
+def test_truncate_counts_omission_after_marker_grows():
+    # 1000 over the limit before the marker, so the count needs 4 digits.
+    text = "X" * 1_100
+
+    found, _ = bs_sandbox._truncate(text, 100)
+
+    assert len(found) == 100
+    assert "[... 1035 characters omitted ...]" in found

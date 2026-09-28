@@ -1,9 +1,11 @@
 import asyncio
 import contextlib
 import dataclasses
+import os
 import pathlib
 import sys
 import tempfile
+import typing
 
 from bubble_sandbox import config as bs_config
 from bubble_sandbox import models as bs_models
@@ -11,6 +13,38 @@ from bubble_sandbox import models as bs_models
 _SYS_BASE_PREFIX = sys.base_prefix
 
 _MAX_OUTPUT_CHARS = 100_000
+
+# Bubblewrap execution is Linux-only; Windows lacks these flags.
+_O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+_O_DIRECTORY = getattr(os, "O_DIRECTORY", 0)
+
+
+def _truncate(text: str, limit: int) -> tuple[str, bool]:
+    """Return 'text' capped at 'limit', and whether it was cut.
+
+    The middle is replaced by a marker counting what was dropped, so both
+    the start of a stream and its end (where a traceback is) survive.
+    """
+    if len(text) <= limit:
+        return text, False
+
+    omitted = len(text) - limit
+
+    while True:
+        marker = f"\n[... {omitted} characters omitted ...]\n"
+        kept = limit - len(marker)
+
+        if kept <= 0:
+            return text[:limit], True
+
+        if len(text) - kept == omitted:
+            break
+
+        # The marker's own length grew the count; recount with it.
+        omitted = len(text) - kept
+
+    head = kept // 2
+    return text[:head] + marker + text[len(text) - (kept - head) :], True
 
 
 def _extant_ro_binds(*paths: str) -> list[str]:
@@ -204,6 +238,123 @@ def volumes_sandbox_args(volume_map: bs_models.VolumeMap) -> list[str]:
     return result
 
 
+DEFAULT_SCRIPT_NAME = "script.py"
+
+
+class InvalidScriptName(ValueError):
+    REASON: typing.ClassVar[str] = "generic error"
+
+    def __init__(self, script_name):
+        self.script_name = script_name
+        super().__init__(
+            f"Invalid script name {script_name!r}: {self.REASON}",
+        )
+
+
+class LeadingTrailingWhitespace(InvalidScriptName):
+    REASON = "script names with leading / trailing whitespace not allowed"
+
+
+class WindowsStylePath(InvalidScriptName):
+    REASON = "Windows-style paths are not allowed"
+
+
+class NotInWorkdirRoot(InvalidScriptName):
+    REASON = "must name a file in the workdir root"
+
+
+class NamesNoFile(InvalidScriptName):
+    REASON = "names no file"
+
+
+class ScriptWriteError(OSError):
+    REASON: typing.ClassVar[str] = "generic error"
+
+    def __init__(self, script_name):
+        self.script_name = script_name
+        super().__init__(
+            f"Writing script {script_name!r} failed: {self.REASON}",
+        )
+
+
+class CannotBeReplacedInWorkdir(ScriptWriteError):
+    REASON = "cannot be replaced inside the workdir"
+
+
+class CannotBeCreatedInWorkdir(ScriptWriteError):
+    REASON = "could not be created inside the workdir"
+
+
+def _validate_script_name(script_name: str) -> str:
+    """Return 'script_name', validated as a file name in the workdir root."""
+    if script_name.strip() != script_name:
+        raise LeadingTrailingWhitespace(script_name)
+
+    if "\\" in script_name:
+        raise WindowsStylePath(script_name)
+
+    if "/" in script_name:
+        raise NotInWorkdirRoot(script_name)
+
+    if script_name in ("", ".", ".."):
+        raise NamesNoFile(script_name)
+
+    return script_name
+
+
+def write_script(
+    workdir: pathlib.Path,
+    script_name: str,
+    script: str,
+) -> str:
+    """Write 'script' to 'script_name' in the root of 'workdir'.
+
+    Whatever holds that name is unlinked without being opened, and a new
+    file is created exclusively, so a symlink, hard link or FIFO left by an
+    earlier execution is neither followed nor written through.
+
+    Returns the name written.
+    """
+    name = _validate_script_name(script_name)
+    # Encode first: an unencodable script must not disturb the workdir.
+    data = script.encode("utf-8")
+    dir_fd = os.open(workdir, os.O_RDONLY | _O_DIRECTORY | os.O_CLOEXEC)
+
+    try:
+        try:
+            os.unlink(name, dir_fd=dir_fd)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:  # EISDIR when a directory holds the name
+            raise CannotBeReplacedInWorkdir(
+                script_name,
+            ) from exc
+
+        try:
+            # O_EXCL: a name recreated since the unlink is refused.
+            fd = os.open(
+                name,
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | _O_NOFOLLOW
+                | os.O_CLOEXEC,
+                0o600,
+                dir_fd=dir_fd,
+            )
+        except OSError as exc:
+            raise CannotBeCreatedInWorkdir(
+                script_name,
+            ) from exc
+
+        with os.fdopen(fd, "wb") as script_file:
+            script_file.write(data)
+    finally:
+        os.close(dir_fd)
+
+    return name
+
+
 @dataclasses.dataclass(kw_only=True)
 class BwrapSandbox:
     default_environment: str
@@ -243,11 +394,12 @@ class BwrapSandbox:
         script: str,
         environment_name: str = None,
         workdir: pathlib.Path | str = None,
+        script_name: str = DEFAULT_SCRIPT_NAME,
         timeout: float = None,  # seconds
         extra_volumes: bs_models.VolumeMap = None,
         extra_args: list[str] = None,
     ) -> bs_models.ExecuteResult:
-
+        """Execute 'script', stored as 'script_name' in the workdir root."""
         if workdir is None:
             workdir_context = tempfile.TemporaryDirectory(
                 ignore_cleanup_errors=True,
@@ -258,13 +410,12 @@ class BwrapSandbox:
         with workdir_context as workdir_str:
             workdir_path = pathlib.Path(workdir_str)
 
-            script_path = workdir_path / "script.py"
-            script_path.write_text(script, encoding="utf-8")
+            written = write_script(workdir_path, script_name, script)
 
             return await self.execute(
                 command=[
                     "/sandbox/venv/bin/python",
-                    "/sandbox/work/script.py",
+                    f"/sandbox/work/{written}",
                 ],
                 environment_name=environment_name,
                 workdir=workdir_path,
@@ -303,6 +454,8 @@ class BwrapSandbox:
             stderr=asyncio.subprocess.PIPE,
         )
 
+        max_output_chars = self.config.max_output_chars
+
         try:
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(),
@@ -312,20 +465,25 @@ class BwrapSandbox:
             proc.kill()
             await proc.wait()
             return bs_models.ExecuteResult(
-                output="Execution timed out",
-                exit_code=-1,
+                timed_out=True,
+                timeout_seconds=timeout,
+                max_output_chars=max_output_chars,
             )
 
-        stdout = stdout.decode("utf-8", errors="replace")
-        stderr = stderr.decode("utf-8", errors="replace")
-        output = stdout + stderr
-        truncated = len(output) > self.config.max_output_chars
-
-        if truncated:
-            output = output[: self.config.max_output_chars]
+        stdout, out_cut = _truncate(
+            stdout.decode("utf-8", errors="replace"),
+            max_output_chars,
+        )
+        stderr, err_cut = _truncate(
+            stderr.decode("utf-8", errors="replace"),
+            max_output_chars,
+        )
 
         return bs_models.ExecuteResult(
-            output=output,
+            stdout=stdout,
+            stderr=stderr,
             exit_code=proc.returncode or 0,
-            truncated=truncated,
+            truncated=out_cut or err_cut,
+            max_output_chars=max_output_chars,
+            timeout_seconds=timeout,
         )

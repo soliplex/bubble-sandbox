@@ -63,11 +63,24 @@ jobs:
           .venv/bin/pip install --upgrade pip setuptools
           .venv/bin/pip install -e .
 
+      - name: Install bubblewrap
+        run: |
+          sudo apt-get update && sudo apt-get install -y bubblewrap
+          # Ubuntu 24.04 denies unprivileged user namespaces, so bwrap
+          # cannot configure loopback in the netns '--unshare-net' makes.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: Run unit tests with coverage
         run: |
           set -o pipefail
           pip list
           py.test -s ${{ matrix.pytest-args }} 2>&1 | tee unit-tests.log
+
+      # Functional tests are excluded by pytest's testpaths setting.
+      - name: Run functional tests against real bwrap
+        run: |
+          set -o pipefail
+          py.test -s --no-cov tests/functional 2>&1 | tee functional-tests.log
 
       # Slack notification lives in 'ci-failure-notify.yaml', which only
       # links to this run (see #25), so record what failed here.
@@ -77,7 +90,7 @@ jobs:
           {
             echo "## Python ${{ matrix.python-version }} failed"
             echo
-            for log in unit-tests.log; do
+            for log in unit-tests.log functional-tests.log; do
               [ -f "$log" ] || continue
               echo "<details><summary>$log (last 50 lines)</summary>"
               echo
