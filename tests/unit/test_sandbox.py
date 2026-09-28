@@ -4,6 +4,7 @@ import os
 import pathlib
 import signal
 import stat
+import subprocess
 import sys
 import time
 from unittest import mock
@@ -286,6 +287,176 @@ def test_openjdk_binds(monkeypatch, extant_dirs, glob_results, exp_glob_binds):
     exp_binds.extend(exp_glob_binds)
 
     assert ro_binds == exp_binds
+
+
+@pytest.fixture
+def fresh_probe(monkeypatch):
+    """Run a test with an empty probe cache, as on a Linux host."""
+    monkeypatch.setattr(bs_sandbox, "_SYS_PLATFORM", "linux")
+    bs_sandbox._probe.cache_clear()
+
+    yield
+
+    bs_sandbox._probe.cache_clear()
+
+
+def _completed(returncode, stderr=""):
+    return subprocess.CompletedProcess(
+        args=[],
+        returncode=returncode,
+        stdout="",
+        stderr=stderr,
+    )
+
+
+@pytest.mark.parametrize("w_network", [False, True])
+@mock.patch("shutil.which", return_value="/usr/bin/bwrap")
+@mock.patch("subprocess.run")
+def test_check_available_w_success(run, which, fresh_probe, w_network):
+    run.return_value = _completed(0)
+
+    found = bs_sandbox.check_available(network=w_network)
+
+    assert found is None
+    which.assert_called_once_with("bwrap")
+    ((args, kwargs),) = run.call_args_list
+    assert args == (
+        bs_sandbox.core_sandbox_args(network=w_network) + ["/usr/bin/true"],
+    )
+    assert kwargs["stdin"] is subprocess.DEVNULL
+    assert kwargs["timeout"] == bs_sandbox._PROBE_TIMEOUT_SECONDS
+
+
+@mock.patch("shutil.which", return_value="/usr/bin/bwrap")
+@mock.patch("subprocess.run")
+def test_check_available_w_unsupported_platform(
+    run,
+    which,
+    fresh_probe,
+    monkeypatch,
+):
+    monkeypatch.setattr(bs_sandbox, "_SYS_PLATFORM", "darwin")
+
+    with pytest.raises(bs_sandbox.UnsupportedPlatform) as exc_info:
+        bs_sandbox.check_available()
+
+    assert exc_info.value.detail == "darwin"
+    which.assert_not_called()
+    run.assert_not_called()
+
+
+@mock.patch("shutil.which", return_value=None)
+@mock.patch("subprocess.run")
+def test_check_available_wo_bwrap(run, which, fresh_probe):
+    with pytest.raises(bs_sandbox.BwrapNotFound) as exc_info:
+        bs_sandbox.check_available()
+
+    assert str(exc_info.value) == (
+        "Sandbox unavailable: 'bwrap' not found on PATH"
+    )
+    run.assert_not_called()
+
+
+@mock.patch("shutil.which", return_value="/usr/bin/bwrap")
+@mock.patch("subprocess.run")
+def test_check_available_w_probe_not_started(run, which, fresh_probe):
+    run.side_effect = PermissionError(13, "Permission denied")
+
+    with pytest.raises(bs_sandbox.ProbeNotStarted) as exc_info:
+        bs_sandbox.check_available()
+
+    assert exc_info.value.detail == "[Errno 13] Permission denied"
+
+
+@mock.patch("shutil.which", return_value="/usr/bin/bwrap")
+@mock.patch("subprocess.run")
+def test_check_available_w_probe_timed_out(run, which, fresh_probe):
+    run.side_effect = subprocess.TimeoutExpired(cmd="bwrap", timeout=5.0)
+
+    with pytest.raises(bs_sandbox.ProbeTimedOut) as exc_info:
+        bs_sandbox.check_available()
+
+    assert exc_info.value.timeout_seconds == (
+        bs_sandbox._PROBE_TIMEOUT_SECONDS
+    )
+
+
+@mock.patch("shutil.which", return_value="/usr/bin/bwrap")
+@mock.patch("subprocess.run")
+def test_check_available_w_probe_failed(run, which, fresh_probe):
+    stderr = "bwrap: setting up uid map: Permission denied\n"
+    run.return_value = _completed(1, stderr)
+
+    with pytest.raises(bs_sandbox.ProbeFailed) as exc_info:
+        bs_sandbox.check_available()
+
+    assert exc_info.value.exit_code == 1
+    assert exc_info.value.stderr == stderr
+    assert str(exc_info.value) == (
+        "Sandbox unavailable: probe failed: exit code 1: "
+        "bwrap: setting up uid map: Permission denied"
+    )
+
+
+@pytest.mark.parametrize(
+    "w_returncode, expectation",
+    [
+        (0, contextlib.nullcontext()),
+        (1, pytest.raises(bs_sandbox.ProbeFailed)),
+    ],
+)
+@mock.patch("shutil.which", return_value="/usr/bin/bwrap")
+@mock.patch("subprocess.run")
+def test_check_available_caches_probe(
+    run,
+    which,
+    fresh_probe,
+    w_returncode,
+    expectation,
+):
+    run.return_value = _completed(w_returncode)
+    with contextlib.suppress(bs_sandbox.SandboxUnavailable):
+        bs_sandbox.check_available()
+
+    with expectation:
+        bs_sandbox.check_available()
+
+    run.assert_called_once()
+
+
+@mock.patch("shutil.which", return_value="/usr/bin/bwrap")
+@mock.patch("subprocess.run")
+def test_check_available_probes_each_network_setting(run, which, fresh_probe):
+    run.return_value = _completed(0)
+    bs_sandbox.check_available(network=False)
+
+    bs_sandbox.check_available(network=True)
+
+    assert run.call_count == 2
+
+
+@mock.patch("shutil.which", return_value="/usr/bin/bwrap")
+@mock.patch("subprocess.run")
+def test_check_available_raises_fresh_exception(run, which, fresh_probe):
+    run.return_value = _completed(1)
+    with pytest.raises(bs_sandbox.ProbeFailed) as first:
+        bs_sandbox.check_available()
+
+    with pytest.raises(bs_sandbox.ProbeFailed) as second:
+        bs_sandbox.check_available()
+
+    assert second.value is not first.value
+
+
+@pytest.mark.parametrize("w_returncode, expected", [(0, True), (1, False)])
+@mock.patch("shutil.which", return_value="/usr/bin/bwrap")
+@mock.patch("subprocess.run")
+def test_is_available(run, which, fresh_probe, w_returncode, expected):
+    run.return_value = _completed(w_returncode)
+
+    found = bs_sandbox.is_available()
+
+    assert found is expected
 
 
 def test_venv_sandbox_args(sandbox_config, environments_path):

@@ -164,6 +164,41 @@ def list_environments(
             the_console.line()
 
 
+@the_cli.command(
+    "check",
+)
+def check(
+    ctx: typer.Context,
+    network: bool = typer.Option(
+        False,
+        "-n",
+        "--network",
+        help="Probe with networking allowed (no '--unshare-net')",
+    ),
+    agent_mode: bool = agent_mode_option,
+):
+    """Report whether 'bwrap' can run on this host"""
+    try:
+        bs_sandbox.check_available(network=network)
+    except bs_sandbox.SandboxUnavailable as exc:
+        reason = str(exc)
+    else:
+        reason = None
+
+    if agent_mode:
+        the_console.print_json(
+            data={"available": reason is None, "reason": reason},
+        )
+    elif reason is None:
+        the_console.print("Sandbox available")
+    else:
+        # bwrap's stderr is not Rich markup.
+        the_console.print(reason, markup=False)
+
+    if reason is not None:
+        raise typer.Exit(code=1)
+
+
 def make_sandbox(
     config_file: pathlib.Path | None,
     environment_name: str | None,

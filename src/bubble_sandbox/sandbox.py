@@ -1,8 +1,11 @@
 import asyncio
 import contextlib
 import dataclasses
+import functools
 import os
 import pathlib
+import shutil
+import subprocess
 import sys
 import tempfile
 import typing
@@ -11,6 +14,7 @@ from bubble_sandbox import config as bs_config
 from bubble_sandbox import models as bs_models
 
 _SYS_BASE_PREFIX = sys.base_prefix
+_SYS_PLATFORM = sys.platform
 
 _MAX_OUTPUT_CHARS = 100_000
 
@@ -176,6 +180,108 @@ def core_sandbox_args(network: bool = False) -> list[str]:
         result.append("--unshare-net")
 
     return result
+
+
+class SandboxUnavailable(RuntimeError):
+    REASON: typing.ClassVar[str] = "generic error"
+
+    def __init__(self, detail: str | None = None):
+        self.detail = detail
+        message = f"Sandbox unavailable: {self.REASON}"
+
+        if detail:
+            message = f"{message}: {detail}"
+
+        super().__init__(message)
+
+
+class UnsupportedPlatform(SandboxUnavailable):
+    REASON = "'bwrap' runs only on Linux"
+
+
+class BwrapNotFound(SandboxUnavailable):
+    REASON = "'bwrap' not found on PATH"
+
+
+class ProbeNotStarted(SandboxUnavailable):
+    REASON = "probe could not start 'bwrap'"
+
+
+class ProbeTimedOut(SandboxUnavailable):
+    REASON = "probe timed out"
+
+    def __init__(self, timeout_seconds: float):
+        self.timeout_seconds = timeout_seconds
+        super().__init__(f"after {timeout_seconds:g} seconds")
+
+
+class ProbeFailed(SandboxUnavailable):
+    REASON = "probe failed"
+
+    def __init__(self, exit_code: int, stderr: str):
+        self.exit_code = exit_code
+        self.stderr = stderr
+        super().__init__(f"exit code {exit_code}: {stderr.strip()}")
+
+
+_PROBE_COMMAND = ["/usr/bin/true"]  # absolute: bwrap searches the host PATH
+_PROBE_TIMEOUT_SECONDS = 5.0
+
+
+@functools.cache
+def _probe(network: bool) -> typing.Callable[[], SandboxUnavailable] | None:
+    """Return a factory for the reason 'bwrap' cannot run, or 'None'.
+
+    Cached per process.  'functools.cache' stores only return values, so
+    the failure is returned rather than raised; returning a factory lets
+    each caller raise a fresh exception.
+    """
+    if _SYS_PLATFORM != "linux":
+        return functools.partial(UnsupportedPlatform, _SYS_PLATFORM)
+
+    if shutil.which("bwrap") is None:
+        return BwrapNotFound
+
+    try:
+        completed = subprocess.run(
+            core_sandbox_args(network=network) + _PROBE_COMMAND,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=_PROBE_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return functools.partial(ProbeTimedOut, _PROBE_TIMEOUT_SECONDS)
+    except OSError as exc:
+        return functools.partial(ProbeNotStarted, str(exc))
+
+    if completed.returncode:
+        return functools.partial(
+            ProbeFailed,
+            completed.returncode,
+            completed.stderr,
+        )
+
+    return None
+
+
+def check_available(network: bool = False) -> None:
+    """Raise 'SandboxUnavailable' if 'bwrap' cannot run on this host.
+
+    The probe runs 'bwrap' once with 'core_sandbox_args(network=network)',
+    so it requests the same namespaces a real execution will.
+    """
+    failure = _probe(network)
+
+    if failure is not None:
+        raise failure()
+
+
+def is_available(network: bool = False) -> bool:
+    """Return True if 'bwrap' can run on this host."""
+    return _probe(network) is None
 
 
 def venv_sandbox_args(

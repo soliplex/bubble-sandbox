@@ -1,3 +1,5 @@
+import pytest
+
 from bubble_sandbox import models as bs_models
 from bubble_sandbox import sandbox as bs_sandbox
 
@@ -178,3 +180,10 @@ async def test_bwrapsandboxcommand_execute_python_w_real_timeout(
     assert found.timed_out
     assert found.timeout_seconds == 0.5
     assert found.exit_code is None
+
+
+@pytest.mark.parametrize("w_network", [False, True])
+def test_check_available(w_network):
+    found = bs_sandbox.check_available(network=w_network)
+
+    assert found is None
