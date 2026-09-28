@@ -48,6 +48,10 @@ This package is a thin Python driver around [`bubblewrap`](https://github.com/co
 
 `BwrapSandbox.execute` runs the resulting argv via `asyncio.create_subprocess_exec` and enforces `config.execution_timeout_seconds` with `asyncio.wait_for`. It returns an `ExecuteResult` carrying `stdout` and `stderr` separately, each cut to `config.max_output_chars` by replacing its middle with a marker counting the characters dropped (the limit is also reported). A timeout sets `timed_out` and leaves `exit_code` as `None`. `execute_python` writes the script to the workdir and invokes it under `/sandbox/work`. `execute_script` is kept as a backward-compat alias for `execute_python`.
 
+### Probing whether bwrap can run
+
+`check_available(network=False)` raises a `SandboxUnavailable` subclass when `bwrap` cannot run on this host: `UnsupportedPlatform` (not Linux), `BwrapNotFound` (not on `PATH`), `ProbeNotStarted`, `ProbeTimedOut`, or `ProbeFailed` (carrying `exit_code` and `stderr`; e.g. user namespaces restricted, or a container profile refusing them). The probe runs `core_sandbox_args(network=network) + ["/usr/bin/true"]` once, so it requests the same namespaces a real execution does; keep it built from `core_sandbox_args` rather than duplicating flags. `is_available()` is the boolean form. The outcome is cached per process and per `network` value in `_probe`, which *returns* a failure factory because `functools.cache` does not cache raised exceptions; unit tests clear it via the `fresh_probe` fixture.
+
 ### The script write must not follow links out of the workdir
 
 `execute_python` writes scripts from the host into an attacker-writable workdir. `script_name` must name a file in the workdir root: no `/`, no `\`, no surrounding whitespace, and not `.` or `..`; `InvalidScriptName` (a `ValueError`) reports a name that breaks these rules, and `ScriptWriteError` (an `OSError`) reports a valid name that cannot be written, e.g. because a directory holds it. `write_script` unlinks whatever holds that name without opening it, then creates a new file with `O_CREAT | O_EXCL | O_NOFOLLOW`, so a symlink, hard link or FIFO left by an earlier execution is neither followed nor written through. Nested paths are deliberately unsupported: creating parents safely would need an `openat`-style walk of every component.
@@ -64,7 +68,7 @@ Each directory under `environments/` is its own `pyproject.toml` project with it
 
 ### CLI
 
-`src/bubble_sandbox/cli/__init__.py` is a Typer app with these commands: `list-environments`, `execute-python` (script string or file), `execute` (argv, no shell), `exec-command` (wraps argv in `sh -c`). `exec-script` is kept as a deprecated alias that forwards to `execute-python`. `-a/--agent-mode` switches from Rich-decorated output to machine-parseable form (JSON for `list-environments`, raw stdout for the exec commands) — when adding new CLI output, honor this flag so agent callers get clean output.
+`src/bubble_sandbox/cli/__init__.py` is a Typer app with these commands: `check` (probe whether `bwrap` can run; exits 1 with the reason when not), `list-environments`, `execute-python` (script string or file), `execute` (argv, no shell), `exec-command` (wraps argv in `sh -c`). `exec-script` is kept as a deprecated alias that forwards to `execute-python`. `-a/--agent-mode` switches from Rich-decorated output to machine-parseable form (JSON for `check` and `list-environments`, raw stdout for the exec commands) — when adding new CLI output, honor this flag so agent callers get clean output.
 
 ### Tests
 
