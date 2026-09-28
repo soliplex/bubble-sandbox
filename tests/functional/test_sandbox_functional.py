@@ -133,7 +133,7 @@ async def test_bwrapsandboxcommand_execute_separates_streams(
     assert not found.timed_out
 
 
-async def test_bwrapsandboxcommand_execute_python_w_nested_script_path(
+async def test_bwrapsandboxcommand_execute_python_w_script_name(
     tmp_path,
     sandbox_config,
     bare_environment,
@@ -149,12 +149,12 @@ async def test_bwrapsandboxcommand_execute_python_w_nested_script_path(
     found = await sandbox.execute_python(
         script="import sys; print(sys.argv[0])",
         workdir=workdir,
-        script_path=".snapshots/run-1/script.py",
+        script_name="run-1.py",
     )
 
     assert found.exit_code == 0
-    assert found.stdout == "/sandbox/work/.snapshots/run-1/script.py\n"
-    written = workdir / ".snapshots" / "run-1" / "script.py"
+    assert found.stdout == "/sandbox/work/run-1.py\n"
+    written = workdir / "run-1.py"
     assert written.read_text(encoding="utf-8") == (
         "import sys; print(sys.argv[0])"
     )

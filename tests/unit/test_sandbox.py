@@ -16,8 +16,6 @@ from bubble_sandbox import sandbox as bs_sandbox
 ENVIRONMENT_NAME = "test_environment"
 OTHER_ENVIRONMENT_NAME = "other_test_environment"
 WORKDIR_NAME = "test_workdir"
-WHITESPACE_REASON = "Paths with leading / trailing whitespace not allowed"
-WINDOWS_REASON = "Windows-style paths are not allowed"
 HOST_VOLUME_PATH = pathlib.Path("/path/to/host/volume")
 VOLUME_RO = bs_models.VolumeInfo(
     host_path=HOST_VOLUME_PATH,
@@ -386,42 +384,38 @@ def test_volumes_sandbox_args(volume_map, expected):
 
 
 @pytest.mark.parametrize(
-    "w_script_path, expected",
-    [
-        ("script.py", ("script.py",)),
-        ("./script.py", ("script.py",)),
-        ("a//b.py", ("a", "b.py")),
-        ("snapshots/run-1/script.py", ("snapshots", "run-1", "script.py")),
-    ],
+    "w_script_name",
+    ["script.py", "run-1.py", ".hidden.py"],
 )
-def test__script_path_parts_accepts(w_script_path, expected):
-    found = bs_sandbox._script_path_parts(w_script_path)
+def test__validate_script_name_accepts(w_script_name):
+    found = bs_sandbox._validate_script_name(w_script_name)
 
-    assert found == expected
+    assert found == w_script_name
 
 
 @pytest.mark.parametrize(
-    "w_script_path, expected_reason",
+    "w_script_name, expectation",
     [
-        (" script.py", WHITESPACE_REASON),
-        ("script.py\n", WHITESPACE_REASON),
-        ("C:\\escape.py", WINDOWS_REASON),
-        ("\\\\srv\\share\\x.py", WINDOWS_REASON),
-        ("a\\..\\b.py", WINDOWS_REASON),
-        ("dir/", "Cannot write a directory"),
-        ("/etc/passwd", "must be relative to the workdir"),
-        ("../escape.py", "must not contain '..'"),
-        ("nested/../../escape.py", "must not contain '..'"),
-        ("", "names no file"),
-        (".", "names no file"),
+        (" script.py", pytest.raises(bs_sandbox.LeadingTrailingWhitespace)),
+        ("script.py\n", pytest.raises(bs_sandbox.LeadingTrailingWhitespace)),
+        ("C:\\escape.py", pytest.raises(bs_sandbox.WindowsStylePath)),
+        ("\\\\srv\\share\\x.py", pytest.raises(bs_sandbox.WindowsStylePath)),
+        ("a\\..\\b.py", pytest.raises(bs_sandbox.WindowsStylePath)),
+        ("dir/", pytest.raises(bs_sandbox.NotInWorkdirRoot)),
+        ("./script.py", pytest.raises(bs_sandbox.NotInWorkdirRoot)),
+        ("snapshots/script.py", pytest.raises(bs_sandbox.NotInWorkdirRoot)),
+        ("/etc/passwd", pytest.raises(bs_sandbox.NotInWorkdirRoot)),
+        ("../escape.py", pytest.raises(bs_sandbox.NotInWorkdirRoot)),
+        ("", pytest.raises(bs_sandbox.NamesNoFile)),
+        (".", pytest.raises(bs_sandbox.NamesNoFile)),
+        ("..", pytest.raises(bs_sandbox.NamesNoFile)),
     ],
 )
-def test__script_path_parts_rejects(w_script_path, expected_reason):
-    with pytest.raises(bs_sandbox.InvalidScriptPath) as exc_info:
-        bs_sandbox._script_path_parts(w_script_path)
+def test__validate_script_name_rejects(w_script_name, expectation):
+    with expectation as exc_info:
+        bs_sandbox._validate_script_name(w_script_name)
 
-    assert exc_info.value.script_path == w_script_path
-    assert exc_info.value.reason == expected_reason
+    assert exc_info.value.script_name == w_script_name
 
 
 @pytest.mark.parametrize(
@@ -1055,7 +1049,7 @@ async def test_bwrapsandboxcommand_execute_reports_timeout_distinctly(
 
 @pytest.mark.asyncio
 @mock.patch("asyncio.create_subprocess_exec")
-async def test_bwrapsandboxcommand_execute_python_w_script_path(
+async def test_bwrapsandboxcommand_execute_python_w_script_name(
     cs_exec,
     tmp_path,
     sandbox_config,
@@ -1076,22 +1070,22 @@ async def test_bwrapsandboxcommand_execute_python_w_script_path(
     await sandbox.execute_python(
         script="print('hello')",
         workdir=workdir,
-        script_path="snapshots/run-1/script.py",
+        script_name="run-1.py",
     )
 
-    written = workdir / "snapshots" / "run-1" / "script.py"
+    written = workdir / "run-1.py"
     assert written.read_text(encoding="utf-8") == "print('hello')"
 
     ((args, _),) = cs_exec.call_args_list
     assert args[-2:] == (
         "/sandbox/venv/bin/python",
-        "/sandbox/work/snapshots/run-1/script.py",
+        "/sandbox/work/run-1.py",
     )
 
 
 @pytest.mark.asyncio
 @mock.patch("asyncio.create_subprocess_exec")
-async def test_bwrapsandboxcommand_execute_python_rejects_script_path(
+async def test_bwrapsandboxcommand_execute_python_rejects_script_name(
     cs_exec,
     tmp_path,
     sandbox_config,
@@ -1105,11 +1099,11 @@ async def test_bwrapsandboxcommand_execute_python_rejects_script_path(
         config=sandbox_config,
     )
 
-    with pytest.raises(bs_sandbox.InvalidScriptPath):
+    with pytest.raises(bs_sandbox.NotInWorkdirRoot):
         await sandbox.execute_python(
             script="print('hello')",
             workdir=workdir,
-            script_path="../escape.py",
+            script_name="../escape.py",
         )
 
     cs_exec.assert_not_called()
@@ -1145,37 +1139,6 @@ async def test_bwrapsandboxcommand_execute_python_wo_following_symlink(
     written = workdir / "script.py"
     assert not written.is_symlink()
     assert written.read_text(encoding="utf-8") == "print(1)"
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="POSIX symlinks")
-@pytest.mark.asyncio
-@mock.patch("asyncio.create_subprocess_exec")
-async def test_bwrapsandboxcommand_execute_python_wo_following_parent(
-    cs_exec,
-    tmp_path,
-    sandbox_config,
-    bare_environment,
-):
-    workdir = tmp_path / "work"
-    workdir.mkdir()
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    (workdir / "snapshots").symlink_to(outside)
-
-    sandbox = bs_sandbox.BwrapSandbox(
-        default_environment="bare",
-        config=sandbox_config,
-    )
-
-    with pytest.raises(bs_sandbox.InvalidScriptPath):
-        await sandbox.execute_python(
-            script="pwned",
-            workdir=workdir,
-            script_path="snapshots/script.py",
-        )
-
-    assert list(outside.iterdir()) == []
-    cs_exec.assert_not_called()
 
 
 class _Alarm(BaseException):
@@ -1215,7 +1178,7 @@ def test_write_script_rejects_directory_target(tmp_path):
     workdir.mkdir()
     (workdir / "script.py").mkdir()
 
-    with pytest.raises(bs_sandbox.InvalidScriptPath):
+    with pytest.raises(bs_sandbox.CannotBeReplacedInWorkdir):
         bs_sandbox.write_script(workdir, "script.py", "print(1)")
 
     assert [p.name for p in workdir.iterdir()] == ["script.py"]
@@ -1238,7 +1201,7 @@ def test_write_script_replaces_rather_than_writing_through(tmp_path):
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX mode bits")
-def test_write_script_leaves_no_temporary_behind(tmp_path):
+def test_write_script_w_owner_only_file(tmp_path):
     workdir = tmp_path / "work"
     workdir.mkdir()
 
@@ -1254,7 +1217,7 @@ def test_deadline_guard_fires():
             time.sleep(2.0)
 
 
-def test_write_script_w_uncreatable_temporary(tmp_path, monkeypatch):
+def test_write_script_w_uncreatable_file(tmp_path, monkeypatch):
     workdir = tmp_path / "work"
     workdir.mkdir()
 
@@ -1268,18 +1231,21 @@ def test_write_script_w_uncreatable_temporary(tmp_path, monkeypatch):
 
     monkeypatch.setattr(os, "open", _refuse)
 
-    with pytest.raises(bs_sandbox.InvalidScriptPath):
+    with pytest.raises(bs_sandbox.CannotBeCreatedInWorkdir):
         bs_sandbox.write_script(workdir, "script.py", "print(1)")
 
 
-def test_write_script_removes_temporary_on_a_failed_write(tmp_path):
+def test_write_script_w_unencodable_script(tmp_path):
     workdir = tmp_path / "work"
     workdir.mkdir()
+    previous = workdir / "script.py"
+    previous.write_text("print(0)", encoding="utf-8")
 
     with pytest.raises(UnicodeEncodeError):
         bs_sandbox.write_script(workdir, "script.py", "bad: \udc80")
 
-    assert list(workdir.iterdir()) == []
+    assert [p.name for p in workdir.iterdir()] == ["script.py"]
+    assert previous.read_text(encoding="utf-8") == "print(0)"
 
 
 @pytest.mark.parametrize(

@@ -5,7 +5,7 @@ import os
 import pathlib
 import sys
 import tempfile
-import uuid
+import typing
 
 from bubble_sandbox import config as bs_config
 from bubble_sandbox import models as bs_models
@@ -238,130 +238,121 @@ def volumes_sandbox_args(volume_map: bs_models.VolumeMap) -> list[str]:
     return result
 
 
-DEFAULT_SCRIPT_PATH = "script.py"
+DEFAULT_SCRIPT_NAME = "script.py"
 
 
-class InvalidScriptPath(ValueError):
-    def __init__(self, script_path, reason):
-        self.script_path = script_path
-        self.reason = reason
-        super().__init__(f"Invalid script path {script_path!r}: {reason}")
+class InvalidScriptName(ValueError):
+    REASON: typing.ClassVar[str] = "generic error"
 
-
-def _script_path_parts(script_path: str) -> tuple[str, ...]:
-    """Return validated components of a relative script path."""
-    if script_path.strip() != script_path:
-        raise InvalidScriptPath(
-            script_path,
-            "Paths with leading / trailing whitespace not allowed",
+    def __init__(self, script_name):
+        self.script_name = script_name
+        super().__init__(
+            f"Invalid script name {script_name!r}: {self.REASON}",
         )
 
-    if "\\" in script_path:
-        raise InvalidScriptPath(
-            script_path,
-            "Windows-style paths are not allowed",
+
+class LeadingTrailingWhitespace(InvalidScriptName):
+    REASON = "script names with leading / trailing whitespace not allowed"
+
+
+class WindowsStylePath(InvalidScriptName):
+    REASON = "Windows-style paths are not allowed"
+
+
+class NotInWorkdirRoot(InvalidScriptName):
+    REASON = "must name a file in the workdir root"
+
+
+class NamesNoFile(InvalidScriptName):
+    REASON = "names no file"
+
+
+class ScriptWriteError(OSError):
+    REASON: typing.ClassVar[str] = "generic error"
+
+    def __init__(self, script_name):
+        self.script_name = script_name
+        super().__init__(
+            f"Writing script {script_name!r} failed: {self.REASON}",
         )
 
-    if script_path.endswith("/"):
-        raise InvalidScriptPath(
-            script_path,
-            "Cannot write a directory",
-        )
 
-    path = pathlib.PurePosixPath(script_path)
-
-    if path.is_absolute():
-        raise InvalidScriptPath(script_path, "must be relative to the workdir")
-
-    parts = tuple(part for part in path.parts if part != ".")
-
-    if not parts:
-        raise InvalidScriptPath(script_path, "names no file")
-
-    if ".." in parts:
-        raise InvalidScriptPath(script_path, "must not contain '..'")
-
-    return parts
+class CannotBeReplacedInWorkdir(ScriptWriteError):
+    REASON = "cannot be replaced inside the workdir"
 
 
-def _write_and_replace(
-    dir_fd: int,
-    name: str,
-    script: str,
-    script_path: str,
-) -> None:
-    """Atomically replace 'name' with a newly created file in 'dir_fd'."""
-    temporary = f".{uuid.uuid4().hex}.tmp"
+class CannotBeCreatedInWorkdir(ScriptWriteError):
+    REASON = "could not be created inside the workdir"
 
-    try:
-        fd = os.open(
-            temporary,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL | _O_NOFOLLOW,
-            0o600,
-            dir_fd=dir_fd,
-        )
-    except OSError as exc:
-        raise InvalidScriptPath(
-            script_path,
-            "could not be written inside the workdir",
-        ) from exc
 
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as script_file:
-            script_file.write(script)
+def _validate_script_name(script_name: str) -> str:
+    """Return 'script_name', validated as a file name in the workdir root."""
+    if script_name.strip() != script_name:
+        raise LeadingTrailingWhitespace(script_name)
 
-        os.replace(temporary, name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
-    except OSError as exc:  # EISDIR when a directory holds the name
-        raise InvalidScriptPath(
-            script_path,
-            f"{name!r} cannot be replaced inside the workdir",
-        ) from exc
-    finally:
-        # A successful replacement has already removed the temporary name.
-        with contextlib.suppress(FileNotFoundError):
-            os.unlink(temporary, dir_fd=dir_fd)
+    if "\\" in script_name:
+        raise WindowsStylePath(script_name)
+
+    if "/" in script_name:
+        raise NotInWorkdirRoot(script_name)
+
+    if script_name in ("", ".", ".."):
+        raise NamesNoFile(script_name)
+
+    return script_name
 
 
 def write_script(
     workdir: pathlib.Path,
-    script_path: str,
+    script_name: str,
     script: str,
-) -> pathlib.PurePosixPath:
-    """Atomically write 'script_path' below 'workdir', following no links.
+) -> str:
+    """Write 'script' to 'script_name' in the root of 'workdir'.
 
-    Returns the path written, relative to 'workdir'.
+    Whatever holds that name is unlinked without being opened, and a new
+    file is created exclusively, so a symlink, hard link or FIFO left by an
+    earlier execution is neither followed nor written through.
+
+    Returns the name written.
     """
-    parts = _script_path_parts(script_path)
+    name = _validate_script_name(script_name)
+    # Encode first: an unencodable script must not disturb the workdir.
+    data = script.encode("utf-8")
     dir_fd = os.open(workdir, os.O_RDONLY | _O_DIRECTORY | os.O_CLOEXEC)
-    opened = [dir_fd]
 
     try:
-        for part in parts[:-1]:
-            try:
-                os.mkdir(part, dir_fd=dir_fd)
-            except FileExistsError:
-                pass
+        try:
+            os.unlink(name, dir_fd=dir_fd)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:  # EISDIR when a directory holds the name
+            raise CannotBeReplacedInWorkdir(
+                script_name,
+            ) from exc
 
-            try:
-                dir_fd = os.open(
-                    part,
-                    os.O_RDONLY | _O_DIRECTORY | _O_NOFOLLOW | os.O_CLOEXEC,
-                    dir_fd=dir_fd,
-                )
-            except OSError as exc:  # ELOOP / ENOTDIR for a symlinked parent
-                raise InvalidScriptPath(
-                    script_path,
-                    f"{part!r} is not a directory inside the workdir",
-                ) from exc
+        try:
+            # O_EXCL: a name recreated since the unlink is refused.
+            fd = os.open(
+                name,
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | _O_NOFOLLOW
+                | os.O_CLOEXEC,
+                0o600,
+                dir_fd=dir_fd,
+            )
+        except OSError as exc:
+            raise CannotBeCreatedInWorkdir(
+                script_name,
+            ) from exc
 
-            opened.append(dir_fd)
-
-        _write_and_replace(dir_fd, parts[-1], script, script_path)
+        with os.fdopen(fd, "wb") as script_file:
+            script_file.write(data)
     finally:
-        for fd in opened:
-            os.close(fd)
+        os.close(dir_fd)
 
-    return pathlib.PurePosixPath(*parts)
+    return name
 
 
 @dataclasses.dataclass(kw_only=True)
@@ -403,13 +394,12 @@ class BwrapSandbox:
         script: str,
         environment_name: str = None,
         workdir: pathlib.Path | str = None,
-        script_path: str = DEFAULT_SCRIPT_PATH,
+        script_name: str = DEFAULT_SCRIPT_NAME,
         timeout: float = None,  # seconds
         extra_volumes: bs_models.VolumeMap = None,
         extra_args: list[str] = None,
     ) -> bs_models.ExecuteResult:
-        """Execute 'script', stored at 'script_path' relative to the
-        workdir."""
+        """Execute 'script', stored as 'script_name' in the workdir root."""
         if workdir is None:
             workdir_context = tempfile.TemporaryDirectory(
                 ignore_cleanup_errors=True,
@@ -420,12 +410,12 @@ class BwrapSandbox:
         with workdir_context as workdir_str:
             workdir_path = pathlib.Path(workdir_str)
 
-            written = write_script(workdir_path, script_path, script)
+            written = write_script(workdir_path, script_name, script)
 
             return await self.execute(
                 command=[
                     "/sandbox/venv/bin/python",
-                    str(pathlib.PurePosixPath("/sandbox/work") / written),
+                    f"/sandbox/work/{written}",
                 ],
                 environment_name=environment_name,
                 workdir=workdir_path,
